@@ -50,7 +50,7 @@ define("INSTR_ARGS", [
   "DEFVAR"      => [ARG_TYPES["var"]],
   "CALL"        => [ARG_TYPES["label"]],
   "RETURN"      => [],
-  "PUSH"        => [ARG_TYPES["symb"]],
+  "PUSHS"       => [ARG_TYPES["symb"]],
   "POPS"        => [ARG_TYPES["var"]],
   "ADD"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
   "SUB"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
@@ -61,7 +61,7 @@ define("INSTR_ARGS", [
   "EQ"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
   "AND"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
   "OR"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "NOT"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
+  "NOT"         => [ARG_TYPES["var"], ARG_TYPES["symb"]],
   "INT2CHAR"    => [ARG_TYPES["var"], ARG_TYPES["symb"]],
   "STRI2INT"    => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
   "READ"        => [ARG_TYPES["var"], ARG_TYPES["type"]],
@@ -83,10 +83,10 @@ define("INSTR_ARGS", [
 
 // Regular expressions to test for validity of instruction arguments
 define("REGEXES", [
-  "var"    => "/^(TF|LF|GF)@[a-zA-Z_\\-$&%*!?][a-zA-Z1-9_\\-$&%*!?]*$/",
-  "int"    => "/^int@[\\+|\\-]?[0-9]$/",
+  "var"    => "/^(TF|LF|GF)@[a-zA-Z_\\-$&%*!?][a-zA-Z0-9_\\-$&%*!?]*$/",
+  "int"    => "/^int@[\\+|\\-]?[0-9]+$/",
   "bool"   => "/^bool@(true|false)$/",
-  "string" => "/^string@([a-zA-Z!\"\$-\\[\\]-~]|(\\\\\\d\\d\\d))+$/",
+  "string" => "/^string@([^\\x00-\\x20\\x23\\x5c]|(\\\\\\d\\d\\d))*$/",
   "nil"    => "/^nil@nil$/",
   "label"  => "/^[a-zA-Z_\\-$&%*!?][a-zA-Z0-9_\\-$&%*!?]*$/",
   "type"   => "/^(int|bool|string|nil)$/"
@@ -186,13 +186,13 @@ class Instruction{
     if(array_key_exists($this->opcode, INSTR_ARGS)){
       $required_args = INSTR_ARGS[$this->opcode];
     }else{
-      trigger_error("Unknown instruction: '" . $this->opcode . "'", E_USER_ERROR);
+      trigger_error("Unknown instruction: '" . $this->opcode . "'", E_USER_WARNING);
       exit(22);
     }
 
     // Check if the amount of arguments of the instruction is right
     if(count($required_args) != count($this->args)){
-      trigger_error("Invalid amount of arguments (" . count($this->args) . " instead of " . count($required_args) . ") for instruction: '" . $this->opcode . "'", E_USER_ERROR);
+      trigger_error("Invalid amount of arguments (" . count($this->args) . " instead of " . count($required_args) . ") for instruction: '" . $this->opcode . "'", E_USER_WARNING);
       exit(23);
     }
 
@@ -221,11 +221,6 @@ class Instruction{
 
         $this->args[$i] = explode('@', $arg);
 
-        // Convert [&<>"'] to XML friendly strings if the arg is a string
-        if($this->args[$i][0] == "string"){
-          $this->args[$i][1] = htmlspecialchars($this->args[$i][1], ENT_XML1 | ENT_QUOTES, "UTF-8");
-        }
-
       // Label must be a label identifier (similar to a variable)
       }else if($required_args[$i] == ARG_TYPES["label"] 
           && preg_match(REGEXES["label"], $arg)){
@@ -240,8 +235,13 @@ class Instruction{
 
       // No regex match!
       }else{
-        trigger_error("Bad argument: '" . $this->args[$i] . "' for instruction: '" . $this->opcode . "'", E_USER_ERROR);
+        trigger_error("Bad argument: '" . $this->args[$i] . "' for instruction: '" . $this->opcode . "'", E_USER_WARNING);
         exit(23);
+      }
+
+      // Convert [&<>"'] to XML friendly chars if the arg is a string or a var
+      if($this->args[$i][0] == "string" || $this->args[$i][0] == "var"){
+        $this->args[$i][1] = htmlspecialchars($this->args[$i][1], ENT_XML1 | ENT_QUOTES, "UTF-8");
       }
     }
   }
@@ -260,6 +260,8 @@ function trimLine($line){
   $pos = strpos($line, "#", 0);
   if($pos){
     $line = substr($line, 0, $pos);
+  }else if(str_starts_with($line, "#")){
+    $line = "";
   }
 
   // Replace '\t' by ' '
@@ -287,7 +289,7 @@ function checkArgs($argc, $argv){
       echo(USAGE);
       exit(0);
     }else{
-      trigger_error("Could not parse arguments provided", E_USER_ERROR);
+      trigger_error("Could not parse arguments provided", E_USER_WARNING);
       exit(10);
     }
   }
@@ -306,14 +308,14 @@ function checkInputHeader(){
       return;
     }
 
-    // Header not found but line is not empty or contains non-space character?
-    if(strlen($line) > 0 || $line[0] != ' '){
+    // Header not found but line is not empty?
+    if(strlen($line) > 0){
       break;
     }
   }
 
   // Header not found!
-  trigger_error("Wrong or no header was found in the provided code", E_USER_ERROR);
+  trigger_error("Wrong or no header was found in the provided code", E_USER_WARNING);
   exit(21);
 }
 
@@ -342,6 +344,9 @@ while($line = fgets(STDIN)){
 
   // Trim redundant white characters from the received line
   $line = trimLine($line);
+  if(!strlen($line)){
+    continue;
+  }
 
   // Create and initialize an instruction given the order and the read line
   $instruction = new Instruction($order, $line);
