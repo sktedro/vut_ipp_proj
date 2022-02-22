@@ -128,12 +128,21 @@ class TestCase{
   }
 
   // Execute the script with the inputs provided
-  function execute($script_path){
-    $command = "php8.1 " 
-        . "\"" . $script_path . "\""
-        . " < \"" . $this->paths["test"] . "\""
-        . " > \"" . $this->output_paths["stdout"] . "\""
-        . " 2> \"" . $this->output_paths["stderr"] . "\"";
+  function execute($action, $script_path){
+    if($action == "parser"){
+      $command = "php8.1 " 
+          . "\"" . $script_path . "\" "
+          . "< \"" . $this->paths["test"] . "\" "
+          . "> \"" . $this->output_paths["stdout"] . "\" "
+          . "2> \"" . $this->output_paths["stderr"] . "\" ";
+    }else{
+      $command = "python3 "
+          . "\"" . $script_path . "\" "
+          . "--source=\"" . $this->paths["test"] . "\" "
+          . "--input=\"" . $this->paths["in"] . "\" "
+          . "> \"" . $this->output_paths["stdout"] . "\" "
+          . "2> \"" . $this->output_paths["stderr"] . "\" ";
+    }
     exec($command, $dummy, $ret_val);
     $this->returned_code = $ret_val;
     // print("Test case ran: " . $this->dir . $this->name . "\n");
@@ -141,7 +150,7 @@ class TestCase{
   }
 
   // Check the output with the reference files
-  function evaluate($jexamxml_dir){
+  function evaluate($action, $jexamxml_dir){
     // If the returned code is not zero, just check if it matches the reference
     if($this->returned_code != 0){
       if($this->returned_code == file_get_contents($this->paths["rc"])){
@@ -150,18 +159,25 @@ class TestCase{
         $this->success = False;
       }
     }else{
-      $command = "java -jar "
-        . "\"" . $jexamxml_dir . "jexamxml.jar\" "
-        . "\"" . $this->paths["out"] . "\" "
-        . "\"" . $this->output_paths["stdout"] . "\" "
-        . "\"" . $this->output_paths["diff"] . "\" "
-        . "\"/D\" "
-        . "\"" . $jexamxml_dir . "options" . "\" ";
+      $command = ""; // TODO needed?
+      if($action == "parser"){
+        $command = "java -jar "
+          . "\"" . $jexamxml_dir . "jexamxml.jar\" "
+          . "\"" . $this->paths["out"] . "\" "
+          . "\"" . $this->output_paths["stdout"] . "\" "
+          . "\"" . $this->output_paths["diff"] . "\" "
+          . "\"/D\" "
+          . "\"" . $jexamxml_dir . "options" . "\" ";
+      }else if($action == "int"){
+        $command = "diff -qyt --left-column "
+          . "\"" . $this->paths["out"] . "\" "
+          . "\"" . $this->output_paths["stdout"] . "\" ";
+      }
+
       exec($command, $dummy, $ret_val);
 
       // Check the diff, stderr and return code
       if($ret_val == 0 
-          && filesize($this->output_paths["stderr"]) == 0
           && $this->returned_code == file_get_contents($this->paths["rc"])){
         $this->success = True;
       }else{
@@ -178,7 +194,7 @@ class TestCase{
       print("FAILED: " . $this->dir . $this->name . "<br>\n");
       print("==================================================<br>\n");
       
-      print("TEST:\n" . file_get_contents($this->paths["test"]) . "<br>\n");
+      print("TEST:<br>\n" . html_string(file_get_contents($this->paths["test"])) . "<br>\n");
       print("==================================================<br>\n");
 
       if($this->returned_code != file_get_contents($this->paths["rc"])){
@@ -188,21 +204,23 @@ class TestCase{
         print("Received: " . $this->returned_code . "<br>\n");
         print("==================================================<br>\n");
         print("STDERR:<br>\n");
-        print(file_get_contents($this->output_paths["stderr"]));
+        print(html_string(file_get_contents($this->output_paths["stderr"])));
         print("<br>\n");
       }else{
         print("STDERR:<br>\n");
-        print(file_get_contents($this->output_paths["stderr"]));
+        print(html_string(file_get_contents($this->output_paths["stderr"])));
         print("<br>\n");
         print("==================================================<br>\n");
         print("EXPECTED:<br>\n");
-        print(file_get_contents($this->paths["out"]));
+        print(html_string(file_get_contents($this->paths["out"])));
+        print("<br>\n");
         print("==================================================<br>\n");
         print("RECEIVED:<br>\n");
-        print(file_get_contents($this->output_paths["stdout"]));
+        print(html_string(file_get_contents($this->output_paths["stdout"])));
+        print("<br>\n");
         print("==================================================<br>\n");
         print("DIFF:<br>\n");
-        print(file_get_contents($this->output_paths["diff"]));
+        print(html_string(file_get_contents($this->output_paths["diff"])));
       }
       print("</div>\n\n");
     }
@@ -251,6 +269,11 @@ function getTestCasesInDir($dir, $recursive){
   }
 
   return $test_cases;
+}
+
+// TODO
+function html_string($str){
+  return str_replace("\n", "<br>", htmlspecialchars($str, ENT_QUOTES));
 }
 
 
@@ -352,10 +375,17 @@ $result = ["passed" => 0, "total" => 0];
 foreach($test_cases as $test_case){
 
   // Execute the tests
-  $test_case->execute($parser);
+  if($action == "parse"){
+    $test_case->execute($action, $parser);
+  }else if($action == "int"){
+    // TODO
+    $test_case->execute($action, $interpret);
+  }else{
+  }
 
+  // TODO
   // Evaluate the tests
-  $test_case->evaluate($jexamxml_dir);
+  $test_case->evaluate($action, $jexamxml_dir);
 
   // Calculate the result
   if($test_case->success){
