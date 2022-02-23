@@ -8,8 +8,6 @@ import xml.etree.ElementTree as ET
 import sys
 import operator
 
-# TODO checking if var defined (declared)
-
 #
 #
 # Miscellaneous functions
@@ -18,7 +16,6 @@ import operator
 
 
 # Print an error and exit if an exit code was provided
-# TODO also print opcode and args?
 def err(code, *text):
     for i in range(len(text)):
         sys.stderr.write(text[i])
@@ -40,18 +37,6 @@ def code_err(code, *text):
     else:
         sys.stderr.write("\n")
 
-def check_type(arg, dt):
-    return arg.symb_type() == dt
-
-# Check if the data types of arguments match to strings provided in *types
-def check_types(args, *types):
-    if isinstance(args, Argument):
-        args = [args]
-    for i in range(len(args)):
-        if args[i].symb_type() != types[i]:
-            code_err(53, "Wrong data type: requires " + types[i] + " but received " + args[i].symb_type())
-
-
 #
 #
 # Classes
@@ -64,7 +49,7 @@ class Program:
     def __init__(self, input_file, instructions):
         self.input_file = input_file
         self.instructions = instructions
-        self.labels = []
+        self.labels = {}
         self.prev_order = 0
         self.data_stack = []
         self.return_stack = []
@@ -83,20 +68,14 @@ class Program:
         for instr in self.instructions:
             if instr.opcode == "LABEL":
 
-                # Check the label arg type
-                check_types(instr.args[0], "label")
-
-                # Create the new label
-                label = {
-                    "name": instr.args[0].symb_val(),
-                    "order": instr.order
-                    }
+                name = instr.args[0].symb_val()
 
                 # Make sure a label with that name doesn't already exist
-                for existing_label in self.labels:
-                    if label["name"] == existing_label["name"]:
-                        err(52, "Label name " + label["name"] + " used twice")
-                self.labels.append(label)
+                if name in self.labels:
+                    err(52, "Label name " + name + " used twice")
+
+                # Create the new label
+                self.labels[name] = instr.order
 
 
     # Returns a new line from the input file (can be stdin)
@@ -138,30 +117,48 @@ class Exec:
     # Does a binary mathematical operation specified by operator
     # args[0] = args[1] <operator> args[2]
     def math_op(args, operator):
-        check_types(args[1: ], "int", "int")
         operand1 = int(args[1].symb_val())
         operand2 = int(args[2].symb_val())
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "int", 
                 str(operator(operand1, operand2))
                 )
 
+    # Does a binary relational operation specified by operator
+    # args[0] = args[1] <operator> args[2]
+    def bool_relational_op(args, operator):
+        # TODO EQ cannot compare nil with nil
+        # TODO relation between booleans?
+        if args[1].symb_type() == args[2].symb_type() == "int":
+            operand1 = int(args[1].symb_val())
+            operand2 = int(args[2].symb_val())
+        #  elif args[1].symb_type() == args[2].symb_type() == "bool":
+            #  operand1 = bool(args[1].symb_val())
+            #  operand2 = bool(args[2].symb_val())
+        else:
+            operand1 = args[1].symb_val()
+            operand2 = args[2].symb_val()
+        code_err(None, str(operand1) + str(operator) + str(operand2) + "=" + str(operator(operand1, operand2)).lower())
+        program.symtab.define(
+                args[0], 
+                "bool", 
+                str(operator(operand1, operand2)).lower()
+                )
     # Does a binary boolean operation specified by operator
     # args[0] = args[1] <operator> args[2]
     def bool_binary_op(args, operator):
-        check_types(args[1: ], "bool", "bool")
         operand1 = args[1].symb_val() == "true"
         operand2 = args[2].symb_val() == "true"
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "bool", 
-                operator(operand1, operand2)
+                str(operator(operand1, operand2)).lower()
                 )
 
     # MOVE
     def e_move(args):
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 args[1].symb_type(), 
                 args[1].symb_val()
@@ -180,14 +177,15 @@ class Exec:
 
     # POPFRAME
     def e_popframe(args):
-        if len(program.symtab.lfs) == 0:
-            code_err(55, "Cannot pop a temporary frame since none exists")
         # Move LF to TF by popping from LFs
-        program.symtab.tf = program.symtab.lfs.pop()
+        try:
+            program.symtab.tf = program.symtab.lfs.pop()
+        except:
+            code_err(55, "Cannot pop a temporary frame since none exists")
 
     # DEFVAR
     def e_defvar(args):
-        program.symtab.define(args[0])
+        program.symtab.declare(args[0])
 
     # CALL
     def e_call(args):
@@ -196,10 +194,11 @@ class Exec:
 
     # RETURN
     def e_return(args):
-        if len(program.return_stack) == 0:
+        try:
+            program.jump_after_order(program.return_stack[-1])
+            program.return_stack.pop()
+        except:
             code_err(56, "Cannot return from a call, call stack is empty")
-        program.jump_after_order(program.return_stack[-1])
-        program.return_stack.pop()
 
     # PUSHS
     def e_pushs(args):
@@ -209,12 +208,16 @@ class Exec:
 
     # POPS
     def e_pops(args):
-        program.symtab.set(
+        try:
+            popped_item = program.data_stack.pop()
+        except:
+            code_err(56, "Cannot pop from an empty stack")
+        program.symtab.define(
                 args[0], 
-                program.data_stack[-1]["type"], 
-                program.data_stack[-1]["val"]
+                popped_item["type"], 
+                popped_item["val"]
                 )
-        program.data_stack.pop()
+        
 
     # Binary mathematical operations:
     # ADD SUB MUL IDIV
@@ -229,14 +232,17 @@ class Exec:
             code_err(57, "Division by zero encountered")
         Exec.math_op(args, operator.floordiv)
 
-    # Binary boolean operations:
-    # LT GT EQ ADD OR
+    # Binary relational operations:
+    # LT GT EQ 
     def e_lt(args):
-        Exec.bool_binary_op(args, operator.__lt__)
+        Exec.bool_relational_op(args, operator.__lt__)
     def e_gt(args):
-        Exec.bool_binary_op(args, operator.__gt__)
+        Exec.bool_relational_op(args, operator.__gt__)
     def e_eq(args):
-        Exec.bool_binary_op(args, operator.__eq__)
+        Exec.bool_relational_op(args, operator.__eq__)
+
+    # Binary boolean operations:
+    # AND OR
     def e_and(args):
         Exec.bool_binary_op(args, operator.__and__)
     def e_or(args):
@@ -244,22 +250,20 @@ class Exec:
 
     # NOT
     def e_not(args):
-        check_types(args[1], "bool")
-        oprand = args[1].symb_val() == "true"
-        program.symtab.set(
+        operand = args[1].symb_val() == "true"
+        program.symtab.define(
                 args[0], 
                 "bool", 
-                not operand
+                str(not operand).lower()
                 )
 
     # INT2CHAR
     def e_int2char(args):
-        check_types(args[1], "int")
         try:
             result = chr(int(args[1].symb_val()))
         except:
             code_err(58, "Cannot convert integer to character: out of range")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "string", 
                 result
@@ -267,35 +271,38 @@ class Exec:
 
     # STR2INT
     def e_stri2int(args):
-        check_types(args[1: ], "string", "int")
-        try:
-            result = str(ord(args[1].symb_val()[args[2].symb_val()]))
-        except:
+        index = int(args[2].symb_val())
+        string = args[1].symb_val()
+        if not 0 <= index < len(string):
             code_err(58, "Cannot convert character to integer: out of range")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "int", 
-                result
+                str(ord(string[index]))
                 )
 
     # READ
     def e_read(args):
+        # Read from the input file
         line = program.input_file.readline()
-        if line[-1] == '\n':
-            line = line[: -1]
         try:
+            # If the line is empty (EOF):
+            if line == "":
+                raise Exception("Missing input")
+            # Drop the newline at the end if it exists
+            if line[-1] == "\n":
+                line = line[: -1] 
+            # Parse the input
             if args[1].val == "int":
                 line = "int@" + str(int(line))
             elif args[1].val == "string":
-                line = "int@" + line
+                line = "string@" + line
             elif args[1].val == "bool":
-                if line.upper() == "TRUE":
-                    line = "bool@true"
-                else:
-                    line = "bool@false"
+                code_err(None, line)
+                line = "bool@true" if line.upper() == "TRUE" else "bool@false"
         except:
             line = "nil@nil"
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 line.split("@", 1)[0], 
                 line.split("@", 1)[1]
@@ -304,19 +311,11 @@ class Exec:
     # WRITE
     def e_write(args):
         if args[0].symb_type() != "nil":
-            string = args[0].symb_val()
-            if args[0].symb_type() == "string":
-                # Convert all escaped sequences to characters
-                while re.search("\\\(\\d{1,3})", string) != None:
-                    match = re.search("\\\(\\d{1,3})", string)
-                    sequence = string[match.span()[0]: match.span()[1]]
-                    string = string.replace(sequence, chr(int(sequence[1: ])))
-            print(string, end="")
+            print(args[0].symb_val(), end="")
 
     # CONCAT 
     def e_concat(args):
-        check_types(args[1: ], "string", "string")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "string", 
                 args[1].symb_val() + args[2].symb_val()
@@ -324,8 +323,7 @@ class Exec:
 
     # STRLEN
     def e_strlen(args):
-        check_types(args[1], "string")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "int", 
                 len(args[1].symb_val())
@@ -333,12 +331,11 @@ class Exec:
 
     # GETCHAR
     def e_getchar(args):
-        check_types(args[1: ], "string", "int")
         string = args[1].symb_val()
-        index = args[2].symb_val()
-        if index < 0 or index >= len(string):
+        index = int(args[2].symb_val())
+        if not 0 <= index < len(string):
             code_err(58, "GETCHAR: index out of range")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "string", 
                 string[int(index)]
@@ -346,24 +343,28 @@ class Exec:
 
     # SETCHAR
     def e_setchar(args):
-        check_types(args, "string", "int", "string")
+        if len(args[2].symb_val()) < 1:
+            code_err(58, "SETCHAR: replacement string empty")
+        if not 0 <= int(args[1].symb_val()) < len(args[0].symb_val()):
+            code_err(58, "SETCHAR: index out of range")
+        char = args[2].symb_val()[0]
         string = args[0].symb_val()
         index = int(args[1].symb_val())
-        char = args[2].symb_val()
-        if index < 0 or index >= len(string):
-            code_err(58, "SETCHAR: index out of range")
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "string", 
-                string[: index] + char[0] + string[index + 1: ]
+                string[: index] + char + string[index + 1: ]
                 )
 
     # TYPE
     def e_type(args):
-        symb_type = args[1].symb_type()
-        if symb_type == None:
+        # Get the data type - if symb_type fails, the variable is declared but
+        # not defined and we should return an empty string
+        try:
+            symb_type = args[1].symb_type()
+        except:
             symb_type = ""
-        program.symtab.set(
+        program.symtab.define(
                 args[0], 
                 "string", 
                 symb_type
@@ -373,24 +374,16 @@ class Exec:
     def e_label(args):
         pass # Pass, since the labels are already in the program.labels array
 
+# TODO "eq" (not here but in INSTRUCTIONS)
     # JUMP
     def e_jump(args):
-        check_types(args[0], "label")
-        label_name = args[0].symb_val()
-        for label in program.labels:
-            if label["name"] == label_name:
-                program.jump_after_order(label["order"])
-                return
-        code_err(52, "Cannot jump to a non-existant label")
-
-    # TODO refactored to this point
+        program.jump_after_order(program.labels[args[0].symb_val()])
 
     # JUMPIFEQ
     def e_jumpifeq(args):
-        if ((check_type(args[1], "nil") and args[2].symb_val == "nil") or 
-                (args[1].symb_val == "nil" and check_type(args[2], "nil"))):
-            Exec.e_jump([args[0]])
-        elif args[1].symb_type() == args[2].symb_type():
+        if (args[1].symb_type() == "nil"
+                or args[2].symb_type() == "nil"
+                or args[1].symb_type() == args[2].symb_type()):
             if args[1].symb_val() == args[2].symb_val():
                 Exec.e_jump([args[0]])
         else:
@@ -398,19 +391,16 @@ class Exec:
 
     # JUMPIFNEQ
     def e_jumpifneq(args):
-        if ((check_type(args[1], "nil") and args[2].symb_val != "nil") or 
-                (args[1].symb_val != "nil" and check_type(args[2], "nil"))):
-            e_jump([args[0]])
-        elif args[1].symb_type() == args[2].symb_type():
+        if (args[1].symb_type() == "nil"
+                or args[2].symb_type() == "nil"
+                or args[1].symb_type() == args[2].symb_type()):
             if args[1].symb_val() != args[2].symb_val():
-                e_jump([args[0]])
+                Exec.e_jump([args[0]])
         else:
             code_err(53, "JUMPIFNEQ: data types not compatible")
 
     # EXIT
     def e_exit(args):
-        # TODO need to TRY to convert to int?
-        check_types(args[0], "int")
         if not 0 <= int(args[0].symb_val()) <= 49:
             code_err(57, "Exit value is out of range of allowed values")
         exit(int(args[0].symb_val()))
@@ -437,76 +427,89 @@ class Exec:
         code_err(None, "==================================================")
 
 
-
 # Class defining an instruction argument, consisting of:
-#   order
-#   type
-#   data_type
-#   val
+#   order of the argument
+#   type: "var", "string", "label", "int", ...
+#   val: raw text of the argument
 class Argument:
     def __init__(self, arg_xml):
+        # Argument tag can only be "arg1", "arg2" or "arg3"
         if re.search("^arg[123]$", arg_xml.tag) == None:
             code_err(32, "Received an argument with invalid tag")
-        else:
-            try:
-                self.order = int(arg_xml.tag[-1])
-            except:
-                code_err(32, "Wrong orders of arguments of a instruction")
 
-        try:
-            self.type = arg_xml.attrib["type"]
-        except:
+        # Type of the argument needs to be specified
+        if "type" not in arg_xml.attrib:
             code_err(31, "Received an argument without type specified")
 
-        self.is_var = self.type == "var"
-
+        self.order = int(arg_xml.tag[-1])
+        self.type = arg_xml.attrib["type"]
         self.val = arg_xml.text
 
-        if not self.is_var:
-            if self.type == "int":
-                try:
-                    int(self.val)
-                except:
-                    code_err(53, "Invalid integer literal")
-            if self.type == "bool" and self.val != "true" and self.val != "false":
-                code_err(53, "Invalid bool literal")
-            if self.type == "nil" and self.val != "nil":
-                code_err(53, "Nil data type can only contain value nil")
+        if self.type == "string":
+            # If it is an empty string, arg_xml.text will be None!
+            if self.val == None:
+                self.val = ""
+            # Convert all escaped sequences to normal characters
+            while re.search("\\\(\\d{1,3})", self.val) != None:
+                match = re.search("\\\(\\d{1,3})", self.val)
+                sequence = self.val[match.span()[0]: match.span()[1]]
+                self.val = self.val.replace(sequence, chr(int(sequence[1: ])))
+
+        # Check validity of literals (eg. bool@haha, int@a, nil@1 are invalid)
+        if self.type == "int" and re.search("^[+|-]?\d+$", self.val) == None:
+            code_err(53, "Invalid integer literal")
+        if self.type == "bool" and self.val not in ["true", "false"]:
+            code_err(53, "Invalid bool literal")
+        if self.type == "nil" and self.val != "nil":
+            code_err(53, "Nil data type can only contain value nil")
 
 
+    # Get symbol value (from the symtable it if is a variable)
     def symb_val(self):
-        if self.is_var:
+        if self.type == "var":
             return program.symtab.get(self.val)["val"]
         else:
             return self.val
 
+
+    # Get symbol data type (from the symtable it if is a variable)
     def symb_type(self):
-        if self.is_var:
+        if self.type == "var":
             return program.symtab.get(self.val)["type"]
         else:
             return self.type
 
+# TODO refactored to this point
+
 # Class defining an instruction, consisting of:
-#   order
-#   opcode
-#   args
+#   order (of the instruction)
+#   opcode (name of the instruction)
+#   args (array of Argument objects)
 class Instruction:
     def __init__(self, opcode, order):
-        try:
-            if int(order) <= 0:
-                code_err(32, "Order of an instruction is lower than 1")
-        except:
-            code_err(32, "Order of an instruction is not a number")
+
+        # Order must be a number
+        if re.search("^\d+$", order) == None:
+            err(32, "Order of an instruction #n/a is not a number")
+
+        # Order must be above 0
+        if int(order) < 1:
+            err(32, "Order of an instruction #" + order + " is lower than 1")
+
+        # Check for invalid opcode
+        if not opcode.upper() in INSTRUCTIONS:
+            err(32, "Invalid opcode:", opcode)
+
         self.order = int(order)
         self.opcode = opcode.upper()
-        if not self.opcode in INSTRUCTIONS:
-            code_err(32, "Invalid opcode:", self.opcode)
         self.args = []
+
 
     # Add an argument
     def add_arg(self, arg):
         self.args.append(Argument(arg))
         self.args.sort(key=lambda x: x.order)
+
 
     # Check orders of arguments
     def check_args(self):
@@ -518,7 +521,85 @@ class Instruction:
             err(32, "Invalid arguments of an instruction #" + str(self.order))
 
 
+    # Run the instruction
     def run(self):
+
+        # Check the amount of arguments
+        if len(INSTRUCTIONS[self.opcode]["types"]) != len(self.args):
+            err(53, "Wrong arguments amount of instruction #" + str(self.order))
+
+        # Check if arguments are defined (not just declared)
+        for i in range(len(self.args)):
+            req = INSTRUCTIONS[self.opcode]["requirements"][i]
+            # Skip if there's no requirement
+            if req not in ["declared", "defined"]:
+                continue
+            # If the argument is a variable, dig into the symtab to get the val
+            if self.args[i].type == "label":
+                name = self.args[i].val
+                if not name in program.labels:
+                    code_err(52, "Label " + name + " does not exist")
+            elif self.args[i].type == "var":
+                var = self.args[i].val
+                if req == "declared" and not program.symtab.declared(var):
+                    code_err(54, "Variable " + var + " not declared")
+                elif req == "defined":
+                    if not program.symtab.declared(var):
+                        code_err(54, "Variable " + var + " not declared")
+                    if not program.symtab.defined(var):
+                        code_err(56, "Variable " + var + " not defined")
+
+        # Check argument types
+        for i in range(len(self.args)):
+            req_type = INSTRUCTIONS[self.opcode]["types"][i]
+            got_type = self.args[i].type
+            # Skip if we don't care about the type
+            if req_type == "any":
+                continue
+            # A symbol can be a variable or a literal
+            elif req_type == "symb":
+                if got_type not in ["var", "int", "string", "bool", "nil"]:
+                    code_err(53, "Wrong argument type")
+            # Otherwise the types must match exactly
+            else:
+                if req_type != got_type:
+                    code_err(53, "Wrong argument type")
+
+        #  Check argument data types
+        for i in range(len(self.args)):
+            req_type = INSTRUCTIONS[self.opcode]["data_types"][i]
+            got_type = self.args[i].type
+            # Skip if we don't care or they need to be equal
+            if req_type == "any" or req_type == "eq":
+                continue
+            # If the argument is a variable, dig into the symtab to get the val
+            if got_type == "var":
+                got_type = self.args[i].symb_type()
+            # Check if the types match exactly
+            if req_type != got_type:
+                code_err(53, "Wrong argument data type: requires " 
+                        + req_type + " but received " + got_type)
+        # If they need to be equal, make sure they are
+        if "eq" in INSTRUCTIONS[self.opcode]["data_types"]:
+            types = INSTRUCTIONS[self.opcode]["data_types"]
+            indices = [i for i in range(len(types)) if types[i] == "eq"]
+            base_type = self.args[indices[0]].symb_type()
+            for i in indices[1: ]:
+                comp_type = self.args[i].symb_type()
+                # Exception: LT and GT can't compare nils
+                if self.opcode in ["LT", "GT"] and "nil" in [comp_type, base_type]:
+                    code_err(53, "LT/GT instruction can't compare nils")
+                # Exception: EQ instruction which CAN compare with nil
+                if self.opcode == "EQ" and "nil" in [comp_type, base_type]:
+                    continue
+                # Otherwise if the types don't match, throw an error
+                if comp_type != base_type:
+                    code_err(53, "Wrong argument data types: "
+                            + comp_type
+                            + " should be the same as "
+                            + base_type)
+
+        # Execute the instruction
         INSTRUCTIONS[self.opcode]["function"](self.args)
 
 
@@ -527,16 +608,6 @@ class SymTab:
         self.lfs = []
         self.gf = {}
         self.tf = None
-
-    # TODO arr na defined vars ako lookup table? Alebo používať TRY pri
-    # každom prístupe do symtab!!
-    def def_in_frame(self, frame, name):
-        if name in frame:
-            code_err(52, "Redefinition of variable " + name)
-        frame[name] = {}
-        frame[name]["defined"] = True
-        frame[name]["type"] = None
-        frame[name]["val"] = None
 
     def get_frame(self, var):
         if isinstance(var, str):
@@ -560,21 +631,51 @@ class SymTab:
         else:
             return var.val.split("@", 1)[-1]
 
-    def define(self, var):
+    def declare(self, var):
         name = self.get_name(var)
         frame = self.get_frame(var)
-        self.def_in_frame(frame, name)
+        if name in frame:
+            code_err(52, "Redeclaration of variable " + name)
+        frame[name] = {
+                "declared": True,
+                "defined": False,
+                "type": None,
+                "val": None
+                }
 
-    def set(self, var, literal_type, literal):
+    def declared(self, var):
         name = self.get_name(var)
         frame = self.get_frame(var)
-        frame[name]["val"] = literal
-        frame[name]["type"] = literal_type
+        if name in frame and frame[name]["declared"] == True:
+            return True
+        else:
+            return False
+
+    def define(self, var, literal_type, literal):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        frame[name] = {
+                "declared": True,
+                "defined": True,
+                "type": literal_type,
+                "val": literal
+                }
+
+    def defined(self, var):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        if name in frame and frame[name]["defined"] == True:
+            return True
+        else:
+            return False
 
     def get(self, var):
-        frame = self.get_frame(var)
-        name = self.get_name(var)
-        return frame[name]
+        if self.defined(var):
+            frame = self.get_frame(var)
+            name = self.get_name(var)
+            return frame[name]
+        else:
+            return None
 
 
 # TODO done refactoring to this point
@@ -596,44 +697,363 @@ program = None
 #
 
 
-# Instructions and information about them (their corresponding functions)
+# Instructions and information about them:
+# their corresponding functions and data types of their arguments
 INSTRUCTIONS = {
-        "MOVE":        {"function": Exec.e_move       },
-        "CREATEFRAME": {"function": Exec.e_createframe},
-        "PUSHFRAME":   {"function": Exec.e_pushframe  },
-        "POPFRAME":    {"function": Exec.e_popframe   },
-        "DEFVAR":      {"function": Exec.e_defvar     },
-        "CALL":        {"function": Exec.e_call       },
-        "RETURN":      {"function": Exec.e_return     },
-        "PUSHS":       {"function": Exec.e_pushs      },
-        "POPS":        {"function": Exec.e_pops       },
-        "ADD":         {"function": Exec.e_add        },
-        "SUB":         {"function": Exec.e_sub        },
-        "MUL":         {"function": Exec.e_mul        },
-        "IDIV":        {"function": Exec.e_idiv       },
-        "LT":          {"function": Exec.e_lt         },
-        "GT":          {"function": Exec.e_gt         },
-        "EQ":          {"function": Exec.e_eq         },
-        "AND":         {"function": Exec.e_and        },
-        "OR":          {"function": Exec.e_or         },
-        "NOT":         {"function": Exec.e_not        },
-        "INT2CHAR":    {"function": Exec.e_int2char   },
-        "STRI2INT":    {"function": Exec.e_stri2int   },
-        "READ":        {"function": Exec.e_read       },
-        "WRITE":       {"function": Exec.e_write      },
-        "CONCAT":      {"function": Exec.e_concat     },
-        "STRLEN":      {"function": Exec.e_strlen     },
-        "GETCHAR":     {"function": Exec.e_getchar    },
-        "SETCHAR":     {"function": Exec.e_setchar    },
-        "TYPE":        {"function": Exec.e_type       },
-        "LABEL":       {"function": Exec.e_label      },
-        "JUMP":        {"function": Exec.e_jump       },
-        "JUMPIFEQ":    {"function": Exec.e_jumpifeq   },
-        "JUMPIFNEQ":   {"function": Exec.e_jumpifneq  },
-        "EXIT":        {"function": Exec.e_exit       },
-        "DPRINT":      {"function": Exec.e_dprint     },
-        "BREAK":       {"function": Exec.e_break      },
+        "MOVE":        {
+            "function": Exec.e_move,       
+            "types":      ["var", "symb"],
+            "data_types": ["any", "any"],
+            "requirements": ["declared", "defined"]},
+        "CREATEFRAME": {
+            "function": Exec.e_createframe,
+            "types":      [],
+            "data_types": [],
+            "requirements": []},
+        "PUSHFRAME":   {
+            "function": Exec.e_pushframe,  
+            "types":      [],
+            "data_types": [],
+            "requirements": []},
+        "POPFRAME":    {
+            "function": Exec.e_popframe,   
+            "types":      [],
+            "data_types": [],
+            "requirements": []},
+        "DEFVAR":      {
+            "function": Exec.e_defvar,     
+            "types":      ["var"],
+            "data_types": ["any"],
+            "requirements": ["none"]},
+        "CALL":        {
+            "function": Exec.e_call,       
+            "types":      ["label"],
+            "data_types": ["any"],
+            "requirements": ["defined"]},
+        "RETURN":      {
+            "function": Exec.e_return,     
+            "types":      [],
+            "data_types": [],
+            "requirements": []},
+        "PUSHS":       {
+            "function": Exec.e_pushs,      
+            "types":      ["symb"],
+            "data_types": ["any"],
+            "requirements": ["defined"]},
+        "POPS":        {
+            "function": Exec.e_pops,       
+            "types":      ["var"],
+            "data_types": ["any"],
+            "requirements": ["declared"]},
+        "ADD":         {
+            "function": Exec.e_add,        
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "int", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "SUB":         {
+            "function": Exec.e_sub,        
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "int", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "MUL":         {
+            "function": Exec.e_mul,        
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "int", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "IDIV":        {
+            "function": Exec.e_idiv,       
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "int", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "LT":          {
+            "function": Exec.e_lt,         
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "eq", "eq"],
+            "requirements": ["declared", "defined", "defined"]},
+        "GT":          {
+            "function": Exec.e_gt,         
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "eq", "eq"],
+            "requirements": ["declared", "defined", "defined"]},
+        "EQ":          {
+            "function": Exec.e_eq,         
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "eq", "eq"],
+            "requirements": ["declared", "defined", "defined"]},
+        "AND":         {
+            "function": Exec.e_and,        
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "bool", "bool"],
+            "requirements": ["declared", "defined", "defined"]},
+        "OR":          {
+            "function": Exec.e_or,         
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "bool", "bool"],
+            "requirements": ["declared", "defined", "defined"]},
+        "NOT":         {
+            "function": Exec.e_not,        
+            "types":      ["var", "symb"],
+            "data_types": ["any", "bool"],
+            "requirements": ["declared", "defined"]},
+        "INT2CHAR":    {
+            "function": Exec.e_int2char,   
+            "types":      ["var", "symb"],
+            "data_types": ["any", "int"],
+            "requirements": ["declared", "defined"]},
+        "STRI2INT":    {
+            "function": Exec.e_stri2int,   
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "string", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "READ":        {
+            "function": Exec.e_read,       
+            "types":      ["var", "type"],
+            "data_types": ["any", "any"],
+            "requirements": ["declared", "defined"]},
+        "WRITE":       {
+            "function": Exec.e_write,      
+            "types":      ["symb"],
+            "data_types": ["any"],
+            "requirements": ["defined"]},
+        "CONCAT":      {
+            "function": Exec.e_concat,     
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "string", "string"],
+            "requirements": ["declared", "defined", "defined"]},
+        "STRLEN":      {
+            "function": Exec.e_strlen,     
+            "types":      ["var", "symb"],
+            "data_types": ["any", "string"],
+            "requirements": ["declared", "defined"]},
+        "GETCHAR":     {
+            "function": Exec.e_getchar,    
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["any", "string", "int"],
+            "requirements": ["declared", "defined", "defined"]},
+        "SETCHAR":     {
+            "function": Exec.e_setchar,    
+            "types":      ["var", "symb", "symb"],
+            "data_types": ["string", "int", "string"],
+            "requirements": ["defined", "defined", "defined"]},
+        "TYPE":        {
+            "function": Exec.e_type,       
+            "types":      ["var", "symb"],
+            "data_types": ["any", "any"],
+            "requirements": ["declared", "declared"]},
+        "LABEL":       {
+            "function": Exec.e_label,      
+            "types":      ["label"],
+            "data_types": ["any"],
+            "requirements": ["none"]},
+        "JUMP":        {
+            "function": Exec.e_jump,       
+            "types":      ["label"],
+            "data_types": ["any"],
+            "requirements": ["defined"]},
+        "JUMPIFEQ":    {
+            "function": Exec.e_jumpifeq,   
+            "types":      ["label", "symb", "symb"],
+            "data_types": ["any", "any", "any"],
+            "requirements": ["defined", "defined", "defined"]},
+        "JUMPIFNEQ":   {
+            "function": Exec.e_jumpifneq,  
+            "types":      ["label", "symb", "symb"],
+            "data_types": ["any", "any", "any"],
+            "requirements": ["defined", "defined", "defined"]},
+        "EXIT":        {
+            "function": Exec.e_exit,       
+            "types":      ["symb"],
+            "data_types": ["int"],
+            "requirements": ["defined"]},
+        "DPRINT":      {
+            "function": Exec.e_dprint,     
+            "types":      ["symb"],
+            "data_types": ["any"],
+            "requirements": ["defined"]},
+        "BREAK":       {
+            "function": Exec.e_break,      
+            "types":      [],
+            "data_types": [],
+            "requirements": []},
         }
+#  INSTRUCTIONS = {
+        #  "MOVE":        {
+            #  "function": Exec.e_move,       
+            #  "types":      ["var", "symb"],
+            #  "data_types": [["any"], ["any"]],
+            #  "requirements": ["declared", "defined"]},
+        #  "CREATEFRAME": {
+            #  "function": Exec.e_createframe,
+            #  "types":      [],
+            #  "data_types": [],
+            #  "requirements": []},
+        #  "PUSHFRAME":   {
+            #  "function": Exec.e_pushframe,  
+            #  "types":      [],
+            #  "data_types": [],
+            #  "requirements": []},
+        #  "POPFRAME":    {
+            #  "function": Exec.e_popframe,   
+            #  "types":      [],
+            #  "data_types": [],
+            #  "requirements": []},
+        #  "DEFVAR":      {
+            #  "function": Exec.e_defvar,     
+            #  "types":      ["var"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["none"]},
+        #  "CALL":        {
+            #  "function": Exec.e_call,       
+            #  "types":      ["label"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["defined"]},
+        #  "RETURN":      {
+            #  "function": Exec.e_return,     
+            #  "types":      [],
+            #  "data_types": [],
+            #  "requirements": []},
+        #  "PUSHS":       {
+            #  "function": Exec.e_pushs,      
+            #  "types":      ["symb"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["defined"]},
+        #  "POPS":        {
+            #  "function": Exec.e_pops,       
+            #  "types":      ["var"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["declared"]},
+        #  "ADD":         {
+            #  "function": Exec.e_add,        
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["int"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "SUB":         {
+            #  "function": Exec.e_sub,        
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["int"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "MUL":         {
+            #  "function": Exec.e_mul,        
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["int"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "IDIV":        {
+            #  "function": Exec.e_idiv,       
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["int"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "LT":          {
+            #  "function": Exec.e_lt,         
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["eq"], ["eq"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "GT":          {
+            #  "function": Exec.e_gt,         
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["eq"], ["eq"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "EQ":          {
+            #  "function": Exec.e_eq,         
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["eq"], ["eq"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "AND":         {
+            #  "function": Exec.e_and,        
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["bool"], ["bool"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "OR":          {
+            #  "function": Exec.e_or,         
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["bool"], ["bool"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "NOT":         {
+            #  "function": Exec.e_not,        
+            #  "types":      ["var", "symb"],
+            #  "data_types": [["any"], ["bool"]],
+            #  "requirements": ["declared", "defined"]},
+        #  "INT2CHAR":    {
+            #  "function": Exec.e_int2char,   
+            #  "types":      ["var", "symb"],
+            #  "data_types": [["any"], ["int"]],
+            #  "requirements": ["declared", "defined"]},
+        #  "STRI2INT":    {
+            #  "function": Exec.e_stri2int,   
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["string"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "READ":        {
+            #  "function": Exec.e_read,       
+            #  "types":      ["var", "type"],
+            #  "data_types": [["any"], ["any"]],
+            #  "requirements": ["declared", "defined"]},
+        #  "WRITE":       {
+            #  "function": Exec.e_write,      
+            #  "types":      ["symb"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["defined"]},
+        #  "CONCAT":      {
+            #  "function": Exec.e_concat,     
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["string"], ["string"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "STRLEN":      {
+            #  "function": Exec.e_strlen,     
+            #  "types":      ["var", "symb"],
+            #  "data_types": [["any"], ["string"]],
+            #  "requirements": ["declared", "defined"]},
+        #  "GETCHAR":     {
+            #  "function": Exec.e_getchar,    
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["any"], ["string"], ["int"]],
+            #  "requirements": ["declared", "defined", "defined"]},
+        #  "SETCHAR":     {
+            #  "function": Exec.e_setchar,    
+            #  "types":      ["var", "symb", "symb"],
+            #  "data_types": [["string"], ["int"], ["string"]],
+            #  "requirements": ["defined", "defined", "defined"]},
+        #  "TYPE":        {
+            #  "function": Exec.e_type,       
+            #  "types":      ["var", "symb"],
+            #  "data_types": [["any"], ["any"]],
+            #  "requirements": ["declared", "declared"]},
+        #  "LABEL":       {
+            #  "function": Exec.e_label,      
+            #  "types":      ["label"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["none"]},
+        #  "JUMP":        {
+            #  "function": Exec.e_jump,       
+            #  "types":      ["label"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["defined"]},
+        #  "JUMPIFEQ":    {
+            #  "function": Exec.e_jumpifeq,   
+            #  "types":      ["label", "symb", "symb"],
+            #  "data_types": [["any"], ["any"], ["any"]],
+            #  "requirements": ["defined", "defined", "defined"]},
+        #  "JUMPIFNEQ":   {
+            #  "function": Exec.e_jumpifneq,  
+            #  "types":      ["label", "symb", "symb"],
+            #  "data_types": [["any"], ["any"], ["any"]],
+            #  "requirements": ["defined", "defined", "defined"]},
+        #  "EXIT":        {
+            #  "function": Exec.e_exit,       
+            #  "types":      ["symb"],
+            #  "data_types": [["int"]],
+            #  "requirements": ["defined"]},
+        #  "DPRINT":      {
+            #  "function": Exec.e_dprint,     
+            #  "types":      ["symb"],
+            #  "data_types": [["any"]],
+            #  "requirements": ["defined"]},
+        #  "BREAK":       {
+            #  "function": Exec.e_break,      
+            #  "types":      [],
+            #  "data_types": [],
+            #  "requirements": []},
+        #  }
+
 
 
 #
@@ -705,19 +1125,19 @@ if __name__ == "__main__":
         if xml_instr.tag != "instruction":
             continue
 
-        # Parse the instruction by creating an object
-        try:
-            parsed_instr = Instruction(
-                xml_instr.attrib["opcode"], 
-                xml_instr.attrib["order"]
-                )
-            instructions.append(parsed_instr)
-        # Instruction could not be parsed
-        except:
-            try:
+        # Check if opcode and order are both provided
+        if "opcode" not in xml_instr.attrib or "order" not in xml_instr.attrib:
+            if "order" in xml_instr.attrib:
                 err(32, "Invalid instruction #" + xml_instr.attrib["order"])
-            except:
+            else:
                 err(32, "Invalid instruction #n/a")
+
+        # Parse the instruction by creating an object
+        parsed_instr = Instruction(
+            xml_instr.attrib["opcode"], 
+            xml_instr.attrib["order"]
+            )
+        instructions.append(parsed_instr)
 
         # Add all the arguments
         for xml_arg in xml_instr:

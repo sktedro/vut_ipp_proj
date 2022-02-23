@@ -128,25 +128,36 @@ class TestCase{
   }
 
   // Execute the script with the inputs provided
-  function execute($action, $script_path){
-    if($action == "parser"){
+  function execute($action, $parser_path, $int_path){
+    // Test the parser
+    if($action == "parse"){
       $command = "php8.1 " 
-          . "\"" . $script_path . "\" "
+          . "\"" . $parser_path . "\" "
           . "< \"" . $this->paths["test"] . "\" "
           . "> \"" . $this->output_paths["stdout"] . "\" "
           . "2> \"" . $this->output_paths["stderr"] . "\" ";
-    }else{
+    // Test the interpret
+    }else if ($action == "int"){
       $command = "python3 "
-          . "\"" . $script_path . "\" "
+          . "\"" . $int_path . "\" "
           . "--source=\"" . $this->paths["test"] . "\" "
+          . "--input=\"" . $this->paths["in"] . "\" "
+          . "> \"" . $this->output_paths["stdout"] . "\" "
+          . "2> \"" . $this->output_paths["stderr"] . "\" ";
+    // Test both of them
+    }else{
+      $command = "php8.1 " 
+          . "\"" . $parser_path . "\" "
+          . "< \"" . $this->paths["test"] . "\" "
+          . "2> \"" . $this->output_paths["stderr"] . "\" "
+          . "| python3 "
+          . "\"" . $int_path . "\" "
           . "--input=\"" . $this->paths["in"] . "\" "
           . "> \"" . $this->output_paths["stdout"] . "\" "
           . "2> \"" . $this->output_paths["stderr"] . "\" ";
     }
     exec($command, $dummy, $ret_val);
     $this->returned_code = $ret_val;
-    // print("Test case ran: " . $this->dir . $this->name . "\n");
-    // TODO
   }
 
   // Check the output with the reference files
@@ -160,7 +171,8 @@ class TestCase{
       }
     }else{
       $command = ""; // TODO needed?
-      if($action == "parser"){
+      // Evaluate the parser output
+      if($action == "parse"){
         $command = "java -jar "
           . "\"" . $jexamxml_dir . "jexamxml.jar\" "
           . "\"" . $this->paths["out"] . "\" "
@@ -168,7 +180,8 @@ class TestCase{
           . "\"" . $this->output_paths["diff"] . "\" "
           . "\"/D\" "
           . "\"" . $jexamxml_dir . "options" . "\" ";
-      }else if($action == "int"){
+      // Evaluate the interpret output or both outputs
+      }else{
         $command = "diff -qyt --left-column "
           . "\"" . $this->paths["out"] . "\" "
           . "\"" . $this->output_paths["stdout"] . "\" ";
@@ -375,13 +388,7 @@ $result = ["passed" => 0, "total" => 0];
 foreach($test_cases as $test_case){
 
   // Execute the tests
-  if($action == "parse"){
-    $test_case->execute($action, $parser);
-  }else if($action == "int"){
-    // TODO
-    $test_case->execute($action, $interpret);
-  }else{
-  }
+  $test_case->execute($action, $parser, $interpret);
 
   // TODO
   // Evaluate the tests
@@ -393,11 +400,14 @@ foreach($test_cases as $test_case){
   }
   $result["total"]++;
 
+  // TODO remove:
+  fwrite(STDERR, "Executing test " . $result["total"] . " of " . $total_tests . "\r");
+
 }
 
 // Print tests overview
 print("<div style=\"text-align: center; margin: 50px; margin-bottom: 100px; border: 5px solid #22ff22aa;\">\n");
-print("<p style=\"font-size: 4em;\">Overview</p>\n");
+print("<p style=\"font-size: 4em;\">Overview of tests on target: " . $action . "</p>\n");
 print("<p style=\"font-size: 2em; margin-bottom: 75px;\">\n");
 if($result["passed"] != $result["total"]){
   print("Passed " . $result["passed"] . " out of " . $result["total"] . " tests\n");
