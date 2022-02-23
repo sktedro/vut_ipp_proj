@@ -25,10 +25,11 @@ def err(code, *text):
     else:
         sys.stderr.write("\n")
 
+
 # Print an error and the current location and exit if an exit code was provided
-# TODO also print opcode and args?
 def code_err(code, *text):
-    sys.stderr.write("Error at instruction #" + str(program.prev_order) + ": ")
+    sys.stderr.write("Error at instruction + " + program.prev_instr.opcode 
+            + " with order " + str(program.prev_instr.order) + ": ")
     for i in range(len(text)):
         sys.stderr.write(text[i])
     if code != None:
@@ -36,6 +37,7 @@ def code_err(code, *text):
         exit(code)
     else:
         sys.stderr.write("\n")
+
 
 #
 #
@@ -48,34 +50,40 @@ def code_err(code, *text):
 class Program:
     def __init__(self, input_file, instructions):
         self.input_file = input_file
+
+        # Get instructions and sort them based on their orders
         self.instructions = instructions
-        self.labels = {}
-        self.prev_order = 0
-        self.data_stack = []
-        self.return_stack = []
+        self.instructions.sort(key=lambda x: x.order)
+        self.prev_instr = None
+
+        # A symtable containing all frames
         self.symtab = SymTab()
 
+        self.data_stack = []
+        self.return_stack = []
+
+        # Check whether we have some instructions in the first place...
+        if self.instructions == []:
+            exit(0)
+
         # Check for duplicit orders of instructions in the XML file
-        orders_of_instrs = []
-        for i in instructions:
-            if i.order in orders_of_instrs:
-                err(32, "Duplicit orders of instructions:", str(i.order))
-            orders_of_instrs.append(i.order)
+        for i in range(len(self.instructions) - 1):
+            if self.instructions[i].order == self.instructions[i + 1].order:
+                err(32, "Duplicit instruction orders:", 
+                        str(self.instructions[i].order))
 
-        # TODO sort instructions?
-
-        # Get all labels
-        for instr in self.instructions:
-            if instr.opcode == "LABEL":
-
-                name = instr.args[0].symb_val()
+        # Extract labels
+        self.labels = {}
+        for instruction in self.instructions:
+            if instruction.opcode == "LABEL":
+                label_name = instruction.args[0].symb_val()
 
                 # Make sure a label with that name doesn't already exist
-                if name in self.labels:
-                    err(52, "Label name " + name + " used twice")
+                if label_name in self.labels:
+                    err(52, "Label name " + label_name + " used twice")
 
                 # Create the new label
-                self.labels[name] = instr.order
+                self.labels[label_name] = instruction.order
 
 
     # Returns a new line from the input file (can be stdin)
@@ -86,29 +94,30 @@ class Program:
         return line
 
 
-    # Run the next instruction bsed on the order of the previous instruction
-    def run_next(self):
-
-        # Find the instruction with order higher than order of the previous
-        # instruction but still lowest possible from available instructions
-        next_instr = None
-        for instr in self.instructions:
-            if instr.order > self.prev_order:
-                if next_instr == None or instr.order < next_instr.order:
-                    next_instr = instr
-
-        # If none is found, there are no more instructions to run
-        if next_instr == None:
-            return False
-
-        # Otherwise, update the previous instruction order and run the next one
-        self.prev_order = next_instr.order
-        next_instr.run()
+    # Get the next instruction from the sorted instructions array and run it
+    def run_all(self):
+        while True:
+            if self.prev_instr == None:
+                self.prev_instr = instructions[0]
+            elif instructions.index(self.prev_instr) + 1 < len(instructions):
+                self.prev_instr = instructions[instructions.index(self.prev_instr) + 1]
+            else:
+                return
+            self.prev_instr.run()
 
 
-    # Jump to an instruction following the one with order equal to one provided
-    def jump_after_order(self, order):
-        self.prev_order = order
+    # Jump to an instruction following the one provided
+    def jump_after(self, instruction):
+        self.prev_instr = instruction
+
+
+    # Jump after a label with the name provided
+    def jump_to_label(self, label_name):
+        order = self.labels[label_name]
+        for instruction in instructions:
+            if instruction.order == order:
+                self.prev_instr = instruction
+                return
 
 
 # A class containing functions that execute instructions
@@ -125,26 +134,24 @@ class Exec:
                 str(operator(operand1, operand2))
                 )
 
+
     # Does a binary relational operation specified by operator
     # args[0] = args[1] <operator> args[2]
     def bool_relational_op(args, operator):
-        # TODO EQ cannot compare nil with nil
-        # TODO relation between booleans?
         if args[1].symb_type() == args[2].symb_type() == "int":
             operand1 = int(args[1].symb_val())
             operand2 = int(args[2].symb_val())
-        #  elif args[1].symb_type() == args[2].symb_type() == "bool":
-            #  operand1 = bool(args[1].symb_val())
-            #  operand2 = bool(args[2].symb_val())
         else:
+            # The following works for both a string and a boolean
             operand1 = args[1].symb_val()
             operand2 = args[2].symb_val()
-        code_err(None, str(operand1) + str(operator) + str(operand2) + "=" + str(operator(operand1, operand2)).lower())
         program.symtab.define(
                 args[0], 
                 "bool", 
                 str(operator(operand1, operand2)).lower()
                 )
+
+
     # Does a binary boolean operation specified by operator
     # args[0] = args[1] <operator> args[2]
     def bool_binary_op(args, operator):
@@ -155,6 +162,7 @@ class Exec:
                 "bool", 
                 str(operator(operand1, operand2)).lower()
                 )
+
 
     # MOVE
     def e_move(args):
@@ -189,14 +197,13 @@ class Exec:
 
     # CALL
     def e_call(args):
-        program.return_stack.append(program.prev_order)
+        program.return_stack.append(program.prev_instr)
         Exec.e_jump(args)
 
     # RETURN
     def e_return(args):
         try:
-            program.jump_after_order(program.return_stack[-1])
-            program.return_stack.pop()
+            program.prev_instr = program.return_stack.pop()
         except:
             code_err(56, "Cannot return from a call, call stack is empty")
 
@@ -218,7 +225,6 @@ class Exec:
                 popped_item["val"]
                 )
         
-
     # Binary mathematical operations:
     # ADD SUB MUL IDIV
     def e_add(args):
@@ -374,15 +380,13 @@ class Exec:
     def e_label(args):
         pass # Pass, since the labels are already in the program.labels array
 
-# TODO "eq" (not here but in INSTRUCTIONS)
     # JUMP
     def e_jump(args):
-        program.jump_after_order(program.labels[args[0].symb_val()])
+        program.jump_to_label(args[0].symb_val())
 
     # JUMPIFEQ
     def e_jumpifeq(args):
-        if (args[1].symb_type() == "nil"
-                or args[2].symb_type() == "nil"
+        if ("nil" in [args[1].symb_type(), args[2].symb_type()]
                 or args[1].symb_type() == args[2].symb_type()):
             if args[1].symb_val() == args[2].symb_val():
                 Exec.e_jump([args[0]])
@@ -391,8 +395,7 @@ class Exec:
 
     # JUMPIFNEQ
     def e_jumpifneq(args):
-        if (args[1].symb_type() == "nil"
-                or args[2].symb_type() == "nil"
+        if ("nil" in [args[1].symb_type(), args[2].symb_type()]
                 or args[1].symb_type() == args[2].symb_type()):
             if args[1].symb_val() != args[2].symb_val():
                 Exec.e_jump([args[0]])
@@ -433,6 +436,7 @@ class Exec:
 #   val: raw text of the argument
 class Argument:
     def __init__(self, arg_xml):
+
         # Argument tag can only be "arg1", "arg2" or "arg3"
         if re.search("^arg[123]$", arg_xml.tag) == None:
             code_err(32, "Received an argument with invalid tag")
@@ -479,7 +483,6 @@ class Argument:
         else:
             return self.type
 
-# TODO refactored to this point
 
 # Class defining an instruction, consisting of:
 #   order (of the instruction)
@@ -579,7 +582,7 @@ class Instruction:
             if req_type != got_type:
                 code_err(53, "Wrong argument data type: requires " 
                         + req_type + " but received " + got_type)
-        # If they need to be equal, make sure they are
+        # If they need to be equal...
         if "eq" in INSTRUCTIONS[self.opcode]["data_types"]:
             types = INSTRUCTIONS[self.opcode]["data_types"]
             indices = [i for i in range(len(types)) if types[i] == "eq"]
@@ -609,6 +612,8 @@ class SymTab:
         self.gf = {}
         self.tf = None
 
+
+    # Returns a frame where the variable provided should be or is defined
     def get_frame(self, var):
         if isinstance(var, str):
             frame = var.split("@", 1)[0]
@@ -625,12 +630,14 @@ class SymTab:
                 code_err(55, "Trying to use non-existant local frame")
             return self.lfs[-1]
 
+    # Get the name of the variable
     def get_name(self, var):
         if isinstance(var, str):
             return var.split("@", 1)[-1]
         else:
             return var.val.split("@", 1)[-1]
 
+    # Declare a variable (eg. using DEFVAR)
     def declare(self, var):
         name = self.get_name(var)
         frame = self.get_frame(var)
@@ -643,6 +650,7 @@ class SymTab:
                 "val": None
                 }
 
+    # Check whether a variable is declared
     def declared(self, var):
         name = self.get_name(var)
         frame = self.get_frame(var)
@@ -651,6 +659,7 @@ class SymTab:
         else:
             return False
 
+    # Define a variable (assign a value)
     def define(self, var, literal_type, literal):
         name = self.get_name(var)
         frame = self.get_frame(var)
@@ -661,6 +670,8 @@ class SymTab:
                 "val": literal
                 }
 
+
+    # Check whether a variable is defined
     def defined(self, var):
         name = self.get_name(var)
         frame = self.get_frame(var)
@@ -669,6 +680,7 @@ class SymTab:
         else:
             return False
 
+    # Return a variable (object)
     def get(self, var):
         if self.defined(var):
             frame = self.get_frame(var)
@@ -677,8 +689,6 @@ class SymTab:
         else:
             return None
 
-
-# TODO done refactoring to this point
 
 #
 #
@@ -876,184 +886,6 @@ INSTRUCTIONS = {
             "data_types": [],
             "requirements": []},
         }
-#  INSTRUCTIONS = {
-        #  "MOVE":        {
-            #  "function": Exec.e_move,       
-            #  "types":      ["var", "symb"],
-            #  "data_types": [["any"], ["any"]],
-            #  "requirements": ["declared", "defined"]},
-        #  "CREATEFRAME": {
-            #  "function": Exec.e_createframe,
-            #  "types":      [],
-            #  "data_types": [],
-            #  "requirements": []},
-        #  "PUSHFRAME":   {
-            #  "function": Exec.e_pushframe,  
-            #  "types":      [],
-            #  "data_types": [],
-            #  "requirements": []},
-        #  "POPFRAME":    {
-            #  "function": Exec.e_popframe,   
-            #  "types":      [],
-            #  "data_types": [],
-            #  "requirements": []},
-        #  "DEFVAR":      {
-            #  "function": Exec.e_defvar,     
-            #  "types":      ["var"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["none"]},
-        #  "CALL":        {
-            #  "function": Exec.e_call,       
-            #  "types":      ["label"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["defined"]},
-        #  "RETURN":      {
-            #  "function": Exec.e_return,     
-            #  "types":      [],
-            #  "data_types": [],
-            #  "requirements": []},
-        #  "PUSHS":       {
-            #  "function": Exec.e_pushs,      
-            #  "types":      ["symb"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["defined"]},
-        #  "POPS":        {
-            #  "function": Exec.e_pops,       
-            #  "types":      ["var"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["declared"]},
-        #  "ADD":         {
-            #  "function": Exec.e_add,        
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["int"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "SUB":         {
-            #  "function": Exec.e_sub,        
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["int"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "MUL":         {
-            #  "function": Exec.e_mul,        
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["int"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "IDIV":        {
-            #  "function": Exec.e_idiv,       
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["int"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "LT":          {
-            #  "function": Exec.e_lt,         
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["eq"], ["eq"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "GT":          {
-            #  "function": Exec.e_gt,         
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["eq"], ["eq"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "EQ":          {
-            #  "function": Exec.e_eq,         
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["eq"], ["eq"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "AND":         {
-            #  "function": Exec.e_and,        
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["bool"], ["bool"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "OR":          {
-            #  "function": Exec.e_or,         
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["bool"], ["bool"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "NOT":         {
-            #  "function": Exec.e_not,        
-            #  "types":      ["var", "symb"],
-            #  "data_types": [["any"], ["bool"]],
-            #  "requirements": ["declared", "defined"]},
-        #  "INT2CHAR":    {
-            #  "function": Exec.e_int2char,   
-            #  "types":      ["var", "symb"],
-            #  "data_types": [["any"], ["int"]],
-            #  "requirements": ["declared", "defined"]},
-        #  "STRI2INT":    {
-            #  "function": Exec.e_stri2int,   
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["string"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "READ":        {
-            #  "function": Exec.e_read,       
-            #  "types":      ["var", "type"],
-            #  "data_types": [["any"], ["any"]],
-            #  "requirements": ["declared", "defined"]},
-        #  "WRITE":       {
-            #  "function": Exec.e_write,      
-            #  "types":      ["symb"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["defined"]},
-        #  "CONCAT":      {
-            #  "function": Exec.e_concat,     
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["string"], ["string"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "STRLEN":      {
-            #  "function": Exec.e_strlen,     
-            #  "types":      ["var", "symb"],
-            #  "data_types": [["any"], ["string"]],
-            #  "requirements": ["declared", "defined"]},
-        #  "GETCHAR":     {
-            #  "function": Exec.e_getchar,    
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["any"], ["string"], ["int"]],
-            #  "requirements": ["declared", "defined", "defined"]},
-        #  "SETCHAR":     {
-            #  "function": Exec.e_setchar,    
-            #  "types":      ["var", "symb", "symb"],
-            #  "data_types": [["string"], ["int"], ["string"]],
-            #  "requirements": ["defined", "defined", "defined"]},
-        #  "TYPE":        {
-            #  "function": Exec.e_type,       
-            #  "types":      ["var", "symb"],
-            #  "data_types": [["any"], ["any"]],
-            #  "requirements": ["declared", "declared"]},
-        #  "LABEL":       {
-            #  "function": Exec.e_label,      
-            #  "types":      ["label"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["none"]},
-        #  "JUMP":        {
-            #  "function": Exec.e_jump,       
-            #  "types":      ["label"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["defined"]},
-        #  "JUMPIFEQ":    {
-            #  "function": Exec.e_jumpifeq,   
-            #  "types":      ["label", "symb", "symb"],
-            #  "data_types": [["any"], ["any"], ["any"]],
-            #  "requirements": ["defined", "defined", "defined"]},
-        #  "JUMPIFNEQ":   {
-            #  "function": Exec.e_jumpifneq,  
-            #  "types":      ["label", "symb", "symb"],
-            #  "data_types": [["any"], ["any"], ["any"]],
-            #  "requirements": ["defined", "defined", "defined"]},
-        #  "EXIT":        {
-            #  "function": Exec.e_exit,       
-            #  "types":      ["symb"],
-            #  "data_types": [["int"]],
-            #  "requirements": ["defined"]},
-        #  "DPRINT":      {
-            #  "function": Exec.e_dprint,     
-            #  "types":      ["symb"],
-            #  "data_types": [["any"]],
-            #  "requirements": ["defined"]},
-        #  "BREAK":       {
-            #  "function": Exec.e_break,      
-            #  "types":      [],
-            #  "data_types": [],
-            #  "requirements": []},
-        #  }
-
 
 
 #
@@ -1154,5 +986,4 @@ if __name__ == "__main__":
     # Run instructions until done
     #
 
-    while program.run_next() != False:
-        pass
+    program.run_all()
