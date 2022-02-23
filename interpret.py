@@ -111,7 +111,292 @@ class Program:
                 return
 
 
-# A class containing functions that execute instructions
+# A symbol table for the interpretation (containing global, temporary and local
+# frames)
+class SymTab:
+    def __init__(self):
+        self.lfs = []
+        self.gf = {}
+        self.tf = None
+
+
+    # Returns a frame where the variable provided should be or is defined
+    def get_frame(self, var):
+        if isinstance(var, str):
+            # If we got a literal
+            frame = var.split("@", 1)[0]
+        else:
+            # If we got a variable
+            frame = var.val.split("@", 1)[0]
+
+        if frame == "GF":
+            return self.gf
+        elif frame == "TF":
+            if self.tf == None:
+                code_err(55, "Trying to use non-existant temporary frame")
+            return self.tf
+        else:
+            if len(self.lfs) == 0:
+                code_err(55, "Trying to use non-existant local frame")
+            return self.lfs[-1]
+
+
+    # Get the name of the variable
+    def get_name(self, var):
+        if isinstance(var, str):
+            # If we got a literal
+            return var.split("@", 1)[-1]
+        else:
+            # If we got a variable
+            return var.val.split("@", 1)[-1]
+
+
+    # Declare a variable (eg. using DEFVAR)
+    def declare(self, var):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        if name in frame:
+            code_err(52, "Redeclaration of variable " + name)
+        frame[name] = {
+                "declared": True,
+                "defined": False,
+                "type": None,
+                "val": None
+                }
+
+
+    # Check whether a variable is declared
+    def declared(self, var):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        if name in frame and frame[name]["declared"] == True:
+            return True
+        else:
+            return False
+
+
+    # Define a variable (assign a value)
+    def define(self, var, literal_type, literal):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        frame[name] = {
+                "declared": True,
+                "defined": True,
+                "type": literal_type,
+                "val": literal
+                }
+
+
+    # Check whether a variable is defined
+    def defined(self, var):
+        name = self.get_name(var)
+        frame = self.get_frame(var)
+        if name in frame and frame[name]["defined"] == True:
+            return True
+        else:
+            return False
+
+
+    # Return a variable (object)
+    def get(self, var):
+        if self.defined(var):
+            frame = self.get_frame(var)
+            name = self.get_name(var)
+            return frame[name]
+        else:
+            return None
+
+
+# Class defining an instruction, consisting of:
+#   order (of the instruction, integer)
+#   opcode (name of the instruction)
+#   args (array of Argument objects)
+class Instruction:
+    def __init__(self, opcode, order):
+
+        # Order must be a number
+        if re.search("^\d+$", order) == None:
+            err(32, "Order of an instruction #n/a is not a number")
+
+        # Order must be above 0
+        if int(order) < 1:
+            err(32, "Order of an instruction #" + order + " is lower than 1")
+
+        # Check for invalid opcode
+        if not opcode.upper() in INSTRUCTIONS:
+            err(32, "Invalid opcode:", opcode)
+
+        self.order = int(order)
+        self.opcode = opcode.upper()
+        self.args = []
+
+
+    # Add an argument
+    def add_arg(self, arg):
+        self.args.append(Argument(arg))
+        self.args.sort(key=lambda x: x.order)
+
+
+    # Check orders and amount of arguments
+    def check_args(self):
+
+        # Check orders
+        orders = [arg.order for arg in self.args]
+        if orders not in [[], [1], [1, 2], [1, 2, 3]]:
+            err(32, "Invalid arguments of an instruction #" + str(self.order))
+
+        # Check the amount
+        if len(INSTRUCTIONS[self.opcode]["types"]) != len(self.args):
+            err(53, "Wrong arguments amount of instruction #" + str(self.order))
+
+
+    # Run the instruction
+    def run(self):
+
+        # Check if arguments are defined (not just declared)
+        for i in range(len(self.args)):
+            req = INSTRUCTIONS[self.opcode]["requirements"][i]
+
+            # Skip if there's no requirement
+            if req not in ["declared", "defined"]:
+                continue
+
+            # If it is a label, check the existance
+            if self.args[i].type == "label":
+                name = self.args[i].val
+                if not name in program.labels:
+                    code_err(52, "Label " + name + " does not exist")
+
+            # If the argument is a variable, check the symbol table
+            elif self.args[i].type == "var":
+                var = self.args[i].val
+                if req == "declared" and not program.symtab.declared(var):
+                    code_err(54, "Variable " + var + " not declared")
+                elif req == "defined":
+                    if not program.symtab.declared(var):
+                        code_err(54, "Variable " + var + " not declared")
+                    if not program.symtab.defined(var):
+                        code_err(56, "Variable " + var + " not defined")
+
+        # Check argument types
+        for i in range(len(self.args)):
+            req_type = INSTRUCTIONS[self.opcode]["types"][i]
+            got_type = self.args[i].type
+
+            # Skip if we don't care about the type
+            if req_type == "any":
+                continue
+
+            # A symbol can be a variable or a literal
+            elif req_type == "symb":
+                if got_type not in ["var", "int", "string", "bool", "nil"]:
+                    code_err(53, "Wrong argument type")
+
+            # Otherwise the types must match exactly
+            else:
+                if req_type != got_type:
+                    code_err(53, "Wrong argument type")
+
+        #  Check argument data types
+        for i in range(len(self.args)):
+            req_type = INSTRUCTIONS[self.opcode]["data_types"][i]
+            got_type = self.args[i].type
+
+            # Skip if we don't care or they need to be equal
+            if req_type == "any" or req_type == "eq":
+                continue
+
+            # If the argument is a variable, dig into the symtab to get the val
+            if got_type == "var":
+                got_type = self.args[i].symb_type()
+
+            # Check if the types match exactly
+            if req_type != got_type:
+                code_err(53, "Wrong argument data type: requires " 
+                        + req_type + " but received " + got_type)
+
+        # If the argument data types need to be equal...
+        if "eq" in INSTRUCTIONS[self.opcode]["data_types"]:
+            types = INSTRUCTIONS[self.opcode]["data_types"]
+            indices = [i for i in range(len(types)) if types[i] == "eq"]
+            base_type = self.args[indices[0]].symb_type()
+
+            # Compare data types of arguments to the one of the first argument
+            for i in indices[1: ]:
+                comp_type = self.args[i].symb_type()
+
+                # Exception: LT and GT can't compare nils
+                if self.opcode in ["LT", "GT"] and "nil" in [comp_type, base_type]:
+                    code_err(53, "LT/GT instruction can't compare nils")
+
+                # Exception: EQ instruction which CAN compare with nil
+                if self.opcode == "EQ" and "nil" in [comp_type, base_type]:
+                    continue
+
+                # Otherwise if the types don't match, throw an error
+                if comp_type != base_type:
+                    code_err(53, "Wrong argument data types: "
+                            + comp_type
+                            + " should be the same as "
+                            + base_type)
+
+        # Finally, execute the instruction
+        INSTRUCTIONS[self.opcode]["function"](self.args)
+
+
+# Class defining an instruction argument, consisting of:
+#   order of the argument (integer)
+#   type: "var", "string", "label", "int", ...
+#   val: raw text of the argument
+class Argument:
+    def __init__(self, arg_xml):
+
+        # Argument tag can only be "arg1", "arg2" or "arg3"
+        if re.search("^arg[123]$", arg_xml.tag) == None:
+            code_err(32, "Received an argument with invalid tag")
+
+        self.order = int(arg_xml.tag[-1])
+        self.type = arg_xml.attrib["type"]
+        self.val = arg_xml.text
+
+        if self.type == "string":
+
+            # If it is an empty string, val will be "None"
+            if self.val == None:
+                self.val = ""
+
+            # Convert all escaped sequences to normal characters
+            while re.search("\\\(\\d{1,3})", self.val) != None:
+                match = re.search("\\\(\\d{1,3})", self.val)
+                sequence = self.val[match.span()[0]: match.span()[1]]
+                self.val = self.val.replace(sequence, chr(int(sequence[1: ])))
+
+        # Check validity of literals (eg. bool@haha, int@a, nil@1 are invalid)
+        if self.type == "int" and re.search("^[+|-]?\d+$", self.val) == None:
+            code_err(53, "Invalid integer literal")
+        if self.type == "bool" and self.val not in ["true", "false"]:
+            code_err(53, "Invalid bool literal")
+        if self.type == "nil" and self.val != "nil":
+            code_err(53, "Nil data type can only contain value nil")
+
+
+    # Get symbol value (from the symtable it if is a variable)
+    def symb_val(self):
+        if self.type == "var":
+            return program.symtab.get(self.val)["val"]
+        else:
+            return self.val
+
+
+    # Get symbol data type (from the symtable it if is a variable)
+    def symb_type(self):
+        if self.type == "var":
+            return program.symtab.get(self.val)["type"]
+        else:
+            return self.type
+
+
+# A class containing functions that execute IPPcode22 instructions
 class Exec:
 
     # Calculates a binary mathematical operation specified by operator
@@ -421,289 +706,6 @@ class Exec:
         code_err(None, "  Temporary frame: ")
         code_err(None, "    " + str(program.symtab.tf))
         code_err(None, "==================================================")
-
-
-# Class defining an instruction argument, consisting of:
-#   order of the argument (integer)
-#   type: "var", "string", "label", "int", ...
-#   val: raw text of the argument
-class Argument:
-    def __init__(self, arg_xml):
-
-        # Argument tag can only be "arg1", "arg2" or "arg3"
-        if re.search("^arg[123]$", arg_xml.tag) == None:
-            code_err(32, "Received an argument with invalid tag")
-
-        self.order = int(arg_xml.tag[-1])
-        self.type = arg_xml.attrib["type"]
-        self.val = arg_xml.text
-
-        if self.type == "string":
-
-            # If it is an empty string, val will be "None"
-            if self.val == None:
-                self.val = ""
-
-            # Convert all escaped sequences to normal characters
-            while re.search("\\\(\\d{1,3})", self.val) != None:
-                match = re.search("\\\(\\d{1,3})", self.val)
-                sequence = self.val[match.span()[0]: match.span()[1]]
-                self.val = self.val.replace(sequence, chr(int(sequence[1: ])))
-
-        # Check validity of literals (eg. bool@haha, int@a, nil@1 are invalid)
-        if self.type == "int" and re.search("^[+|-]?\d+$", self.val) == None:
-            code_err(53, "Invalid integer literal")
-        if self.type == "bool" and self.val not in ["true", "false"]:
-            code_err(53, "Invalid bool literal")
-        if self.type == "nil" and self.val != "nil":
-            code_err(53, "Nil data type can only contain value nil")
-
-
-    # Get symbol value (from the symtable it if is a variable)
-    def symb_val(self):
-        if self.type == "var":
-            return program.symtab.get(self.val)["val"]
-        else:
-            return self.val
-
-
-    # Get symbol data type (from the symtable it if is a variable)
-    def symb_type(self):
-        if self.type == "var":
-            return program.symtab.get(self.val)["type"]
-        else:
-            return self.type
-
-
-# Class defining an instruction, consisting of:
-#   order (of the instruction, integer)
-#   opcode (name of the instruction)
-#   args (array of Argument objects)
-class Instruction:
-    def __init__(self, opcode, order):
-
-        # Order must be a number
-        if re.search("^\d+$", order) == None:
-            err(32, "Order of an instruction #n/a is not a number")
-
-        # Order must be above 0
-        if int(order) < 1:
-            err(32, "Order of an instruction #" + order + " is lower than 1")
-
-        # Check for invalid opcode
-        if not opcode.upper() in INSTRUCTIONS:
-            err(32, "Invalid opcode:", opcode)
-
-        self.order = int(order)
-        self.opcode = opcode.upper()
-        self.args = []
-
-
-    # Add an argument
-    def add_arg(self, arg):
-        self.args.append(Argument(arg))
-        self.args.sort(key=lambda x: x.order)
-
-
-    # Check orders and amount of arguments
-    def check_args(self):
-
-        # Check orders
-        orders = [arg.order for arg in self.args]
-        if orders not in [[], [1], [1, 2], [1, 2, 3]]:
-            err(32, "Invalid arguments of an instruction #" + str(self.order))
-
-        # Check the amount
-        if len(INSTRUCTIONS[self.opcode]["types"]) != len(self.args):
-            err(53, "Wrong arguments amount of instruction #" + str(self.order))
-
-
-    # Run the instruction
-    def run(self):
-
-        # Check if arguments are defined (not just declared)
-        for i in range(len(self.args)):
-            req = INSTRUCTIONS[self.opcode]["requirements"][i]
-
-            # Skip if there's no requirement
-            if req not in ["declared", "defined"]:
-                continue
-
-            # If it is a label, check the existance
-            if self.args[i].type == "label":
-                name = self.args[i].val
-                if not name in program.labels:
-                    code_err(52, "Label " + name + " does not exist")
-
-            # If the argument is a variable, check the symbol table
-            elif self.args[i].type == "var":
-                var = self.args[i].val
-                if req == "declared" and not program.symtab.declared(var):
-                    code_err(54, "Variable " + var + " not declared")
-                elif req == "defined":
-                    if not program.symtab.declared(var):
-                        code_err(54, "Variable " + var + " not declared")
-                    if not program.symtab.defined(var):
-                        code_err(56, "Variable " + var + " not defined")
-
-        # Check argument types
-        for i in range(len(self.args)):
-            req_type = INSTRUCTIONS[self.opcode]["types"][i]
-            got_type = self.args[i].type
-
-            # Skip if we don't care about the type
-            if req_type == "any":
-                continue
-
-            # A symbol can be a variable or a literal
-            elif req_type == "symb":
-                if got_type not in ["var", "int", "string", "bool", "nil"]:
-                    code_err(53, "Wrong argument type")
-
-            # Otherwise the types must match exactly
-            else:
-                if req_type != got_type:
-                    code_err(53, "Wrong argument type")
-
-        #  Check argument data types
-        for i in range(len(self.args)):
-            req_type = INSTRUCTIONS[self.opcode]["data_types"][i]
-            got_type = self.args[i].type
-
-            # Skip if we don't care or they need to be equal
-            if req_type == "any" or req_type == "eq":
-                continue
-
-            # If the argument is a variable, dig into the symtab to get the val
-            if got_type == "var":
-                got_type = self.args[i].symb_type()
-
-            # Check if the types match exactly
-            if req_type != got_type:
-                code_err(53, "Wrong argument data type: requires " 
-                        + req_type + " but received " + got_type)
-
-        # If the argument data types need to be equal...
-        if "eq" in INSTRUCTIONS[self.opcode]["data_types"]:
-            types = INSTRUCTIONS[self.opcode]["data_types"]
-            indices = [i for i in range(len(types)) if types[i] == "eq"]
-            base_type = self.args[indices[0]].symb_type()
-
-            # Compare data types of arguments to the one of the first argument
-            for i in indices[1: ]:
-                comp_type = self.args[i].symb_type()
-
-                # Exception: LT and GT can't compare nils
-                if self.opcode in ["LT", "GT"] and "nil" in [comp_type, base_type]:
-                    code_err(53, "LT/GT instruction can't compare nils")
-
-                # Exception: EQ instruction which CAN compare with nil
-                if self.opcode == "EQ" and "nil" in [comp_type, base_type]:
-                    continue
-
-                # Otherwise if the types don't match, throw an error
-                if comp_type != base_type:
-                    code_err(53, "Wrong argument data types: "
-                            + comp_type
-                            + " should be the same as "
-                            + base_type)
-
-        # Finally, execute the instruction
-        INSTRUCTIONS[self.opcode]["function"](self.args)
-
-
-class SymTab:
-    def __init__(self):
-        self.lfs = []
-        self.gf = {}
-        self.tf = None
-
-
-    # Returns a frame where the variable provided should be or is defined
-    def get_frame(self, var):
-        if isinstance(var, str):
-            # If we got a literal
-            frame = var.split("@", 1)[0]
-        else:
-            # If we got a variable
-            frame = var.val.split("@", 1)[0]
-
-        if frame == "GF":
-            return self.gf
-        elif frame == "TF":
-            if self.tf == None:
-                code_err(55, "Trying to use non-existant temporary frame")
-            return self.tf
-        else:
-            if len(self.lfs) == 0:
-                code_err(55, "Trying to use non-existant local frame")
-            return self.lfs[-1]
-
-
-    # Get the name of the variable
-    def get_name(self, var):
-        if isinstance(var, str):
-            # If we got a literal
-            return var.split("@", 1)[-1]
-        else:
-            # If we got a variable
-            return var.val.split("@", 1)[-1]
-
-
-    # Declare a variable (eg. using DEFVAR)
-    def declare(self, var):
-        name = self.get_name(var)
-        frame = self.get_frame(var)
-        if name in frame:
-            code_err(52, "Redeclaration of variable " + name)
-        frame[name] = {
-                "declared": True,
-                "defined": False,
-                "type": None,
-                "val": None
-                }
-
-
-    # Check whether a variable is declared
-    def declared(self, var):
-        name = self.get_name(var)
-        frame = self.get_frame(var)
-        if name in frame and frame[name]["declared"] == True:
-            return True
-        else:
-            return False
-
-
-    # Define a variable (assign a value)
-    def define(self, var, literal_type, literal):
-        name = self.get_name(var)
-        frame = self.get_frame(var)
-        frame[name] = {
-                "declared": True,
-                "defined": True,
-                "type": literal_type,
-                "val": literal
-                }
-
-
-    # Check whether a variable is defined
-    def defined(self, var):
-        name = self.get_name(var)
-        frame = self.get_frame(var)
-        if name in frame and frame[name]["defined"] == True:
-            return True
-        else:
-            return False
-
-
-    # Return a variable (object)
-    def get(self, var):
-        if self.defined(var):
-            frame = self.get_frame(var)
-            name = self.get_name(var)
-            return frame[name]
-        else:
-            return None
 
 
 #
