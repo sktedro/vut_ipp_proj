@@ -229,7 +229,7 @@ class Instruction{
             || preg_match(REGEXES["string"], $arg)
             || preg_match(REGEXES["nil"], $arg))){
 
-        $this->args[$i] = explode('@', $arg);
+        $this->args[$i] = explode('@', $arg, 2);
 
       // Label must be a label identifier (similar to a variable)
       }else if($required_args[$i] == ARG_TYPES["label"] 
