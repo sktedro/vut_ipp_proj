@@ -924,10 +924,10 @@ if __name__ == "__main__":
     # Set up the argparser
     description = "A interpret for IPPcode22 represented by a XML file."
     source_help = (
-            "Source code of a IPPcode22 program in XML format. If not"
+            "Source code of a IPPcode22 program in XML format. If not "
             + "provided, code will be read from standard input")
     input_help = (
-            "Input for the source code implementation. If not provided, input" 
+            "Input for the source code implementation. If not provided, input " 
             + "will be forwarded from standard input")
     argparser = argparse.ArgumentParser(description=description)
     argparser.add_argument("--source", action="store", help=source_help)
