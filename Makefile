@@ -30,7 +30,7 @@ test: test_parser test_interpret test_both
 	rm report.html
 
 pack: clean
-	zip xskalo01.zip parse.php test.php interpret.py README.md
+	zip xskalo01.zip parse.php test.php interpret.py readme1.md readme2.md
 
 clean:
 	rm -f *.html *.zip
