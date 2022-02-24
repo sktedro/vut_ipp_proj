@@ -91,7 +91,8 @@ class Program:
             if self.prev_instr == None:
                 self.prev_instr = instructions[0]
             elif instructions.index(self.prev_instr) + 1 < len(instructions):
-                self.prev_instr = instructions[instructions.index(self.prev_instr) + 1]
+                prev_index = instructions.index(self.prev_instr)
+                self.prev_instr = instructions[prev_index + 1]
             else:
                 return
             self.prev_instr.run()
@@ -325,20 +326,21 @@ class Instruction:
             for i in indices[1: ]:
                 comp_type = self.args[i].symb_type()
 
-                # Exception: LT and GT can't compare nils
-                if self.opcode in ["LT", "GT"] and "nil" in [comp_type, base_type]:
-                    code_err(53, "LT/GT instruction can't compare nils")
+                # Exceptions for relational operators when one type is nil
+                if "nil" in [comp_type, base_type]:
 
-                # Exception: EQ instruction which CAN compare with nil
-                if self.opcode == "EQ" and "nil" in [comp_type, base_type]:
-                    continue
+                    # LT and GT can't compare nils
+                    if self.opcode in ["LT", "GT"]:
+                        code_err(53, "LT/GT instruction can't compare nils")
+
+                    # EQ instruction CAN compare with nil
+                    if self.opcode == "EQ":
+                        continue
 
                 # Otherwise if the types don't match, throw an error
                 if comp_type != base_type:
-                    code_err(53, "Wrong argument data types: "
-                            + comp_type
-                            + " should be the same as "
-                            + base_type)
+                    code_err(53, "Wrong argument data types: " + comp_type
+                            + " should be the same as " + base_type)
 
         # Finally, execute the instruction
         INSTRUCTIONS[self.opcode]["function"](self.args)
