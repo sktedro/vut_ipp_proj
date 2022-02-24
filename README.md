@@ -73,6 +73,7 @@ Of course, every step of the way the code is inspected for lexical and
 syntactic errors and in case of finding any, the parsing stops and returns an
 appropriate return value while reporting the error to the standard error output.
 
+
 ### Usage
 
 #### Reading the source code from the standard input
