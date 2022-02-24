@@ -11,14 +11,14 @@
  */
 
 
-ini_set('display_errors', 'stderr');
-
-
 /*
+ *
  * Constants
+ *
  */
 
 
+// Help message
 define("USAGE",
 "Brief:
   This script reads the IPPcode22 code from standard input, analyzes it 
@@ -33,6 +33,7 @@ Usage:
 ");
 
 
+// Argument types enumeration
 define("ARG_TYPES", [
   "var"   => 0,
   "symb"  => 1,
@@ -43,40 +44,40 @@ define("ARG_TYPES", [
 
 // Arrays defining what argument types the instructions need or support
 define("INSTR_ARGS", [
-  "MOVE"        => [ARG_TYPES["var"], ARG_TYPES["symb"]],
+  "MOVE"        => [ARG_TYPES["var"  ], ARG_TYPES["symb" ]],
   "CREATEFRAME" => [],
   "PUSHFRAME"   => [],
   "POPFRAME"    => [],
-  "DEFVAR"      => [ARG_TYPES["var"]],
+  "DEFVAR"      => [ARG_TYPES["var"  ]],
   "CALL"        => [ARG_TYPES["label"]],
   "RETURN"      => [],
-  "PUSHS"       => [ARG_TYPES["symb"]],
-  "POPS"        => [ARG_TYPES["var"]],
-  "ADD"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "SUB"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "MUL"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "IDIV"        => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "LT"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "GT"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "EQ"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "AND"         => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "OR"          => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "NOT"         => [ARG_TYPES["var"], ARG_TYPES["symb"]],
-  "INT2CHAR"    => [ARG_TYPES["var"], ARG_TYPES["symb"]],
-  "STRI2INT"    => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "READ"        => [ARG_TYPES["var"], ARG_TYPES["type"]],
-  "WRITE"       => [ARG_TYPES["symb"]],
-  "CONCAT"      => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "STRLEN"      => [ARG_TYPES["var"], ARG_TYPES["symb"]],
-  "GETCHAR"     => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "SETCHAR"     => [ARG_TYPES["var"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "TYPE"        => [ARG_TYPES["var"], ARG_TYPES["symb"]],
+  "PUSHS"       => [ARG_TYPES["symb" ]],
+  "POPS"        => [ARG_TYPES["var"  ]],
+  "ADD"         => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "SUB"         => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "MUL"         => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "IDIV"        => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "LT"          => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "GT"          => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "EQ"          => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "AND"         => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "OR"          => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "NOT"         => [ARG_TYPES["var"  ], ARG_TYPES["symb" ]],
+  "INT2CHAR"    => [ARG_TYPES["var"  ], ARG_TYPES["symb" ]],
+  "STRI2INT"    => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "READ"        => [ARG_TYPES["var"  ], ARG_TYPES["type" ]],
+  "WRITE"       => [ARG_TYPES["symb" ]],
+  "CONCAT"      => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "STRLEN"      => [ARG_TYPES["var"  ], ARG_TYPES["symb" ]],
+  "GETCHAR"     => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "SETCHAR"     => [ARG_TYPES["var"  ], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "TYPE"        => [ARG_TYPES["var"  ], ARG_TYPES["symb" ]],
   "LABEL"       => [ARG_TYPES["label"]],
   "JUMP"        => [ARG_TYPES["label"]],
-  "JUMPIFEQ"    => [ARG_TYPES["label"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "JUMPIFNEQ"   => [ARG_TYPES["label"], ARG_TYPES["symb"], ARG_TYPES["symb"]],
-  "EXIT"        => [ARG_TYPES["symb"]],
-  "DPRINT"      => [ARG_TYPES["symb"]],
+  "JUMPIFEQ"    => [ARG_TYPES["label"], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "JUMPIFNEQ"   => [ARG_TYPES["label"], ARG_TYPES["symb" ], ARG_TYPES["symb" ]],
+  "EXIT"        => [ARG_TYPES["symb" ]],
+  "DPRINT"      => [ARG_TYPES["symb" ]],
   "BREAK"       => []
 ]);
 
@@ -94,10 +95,13 @@ define("REGEXES", [
 
 
 /*
+ *
  * Classes
+ *
  */
 
 
+// XML file class containing the DOM and the output
 class XML{
   private $dom;
   private $xml_root;
@@ -122,7 +126,8 @@ class XML{
 
   // Add a new instruction to the XML DOM
   function addInstruction($instruction){
-    // Create a new element
+
+    // Create a new instruction element
     $instruction_xml = $this->dom->createElement("instruction");
 
     // Add order and instruction name (opcode) as attributes
@@ -131,6 +136,7 @@ class XML{
 
     // Add all arguments of the instruction as children
     for($i = 0; $i < count($instruction->args); $i++){
+
       $arg = $instruction->args[$i];
 
       // Create an argument element with name arg1/2/3 and also write the value
@@ -158,23 +164,23 @@ class XML{
 }
 
 
+// An instruction class containing order, opcode and arguments
 class Instruction{
   public $order;
   public $opcode;
   public $args;
-  public $xml;
 
 
-  // Split the line and convert first line element (instruction code) to
-  // uppercase
+  // Split the line and save the line elements
   function __construct($order, $line){
 
     // Save the instruction order
     $this->order = $order;
 
-    // Split the line at spaces, convert the opcode to uppercase, save it and 
-    // save the arguments separately
+    // Split the line at spaces, and save it as arguments
     $this->args = explode(' ', $line);
+
+    // Takthe first element (opcode) from args and convert it to uppercase
     $this->opcode = strtoupper(array_shift($this->args));
   }
 
@@ -186,17 +192,21 @@ class Instruction{
     if(array_key_exists($this->opcode, INSTR_ARGS)){
       $required_args = INSTR_ARGS[$this->opcode];
     }else{
-      trigger_error("Unknown instruction: '" . $this->opcode . "'", E_USER_WARNING);
+      trigger_error("Unknown instruction: '" . $this->opcode . "'", 
+          E_USER_WARNING);
       exit(22);
     }
 
     // Check if the amount of arguments of the instruction is right
     if(count($required_args) != count($this->args)){
-      trigger_error("Invalid amount of arguments (" . count($this->args) . " instead of " . count($required_args) . ") for instruction: '" . $this->opcode . "'", E_USER_WARNING);
+      trigger_error("Invalid amount of arguments (" 
+          . count($this->args) . " instead of " . count($required_args) 
+          . ") for instruction: '" . $this->opcode . "'", E_USER_WARNING);
       exit(23);
     }
 
-    // Parse the arguments if they match a regex
+    // Parse the arguments if they match a regex they are supposed to match
+    // (eg. if we expect a variable, it must match the var regex
     for($i = 0; $i < count($required_args); $i++){
       $arg = $this->args[$i];
 
@@ -235,13 +245,17 @@ class Instruction{
 
       // No regex match!
       }else{
-        trigger_error("Bad argument: '" . $this->args[$i] . "' for instruction: '" . $this->opcode . "'", E_USER_WARNING);
+        trigger_error("Bad argument: '" . $this->args[$i] 
+            . "' for instruction: '" . $this->opcode . "'", E_USER_WARNING);
         exit(23);
       }
 
       // Convert [&<>"'] to XML friendly chars if the arg is a string or a var
       if($this->args[$i][0] == "string" || $this->args[$i][0] == "var"){
-        $this->args[$i][1] = htmlspecialchars($this->args[$i][1], ENT_XML1 | ENT_QUOTES, "UTF-8");
+        $this->args[$i][1] = htmlspecialchars(
+            $this->args[$i][1], 
+            ENT_XML1 | ENT_QUOTES, 
+            "UTF-8");
       }
     }
   }
@@ -249,8 +263,46 @@ class Instruction{
 
 
 /*
+ *
  * Functions
+ *
  */
+
+
+// Check user-provided arguments
+function checkArgs($argc, $argv){
+  if($argc > 1){
+    if($argc == 2 && $argv[1] == "--help"){
+      echo(USAGE);
+      exit(0);
+    }else{
+      trigger_error("Could not parse arguments provided", E_USER_WARNING);
+      exit(10);
+    }
+  }
+}
+
+
+// Check for the .IPPcode22 header (case insensitive)
+function checkInputHeader(){
+  while($line = fgets(STDIN)){
+
+    // Remove redundant whitespaces and comments from the line
+    $line = trimLine($line);
+
+    // Header found? Return
+    if(!strcmp(strtoupper($line), ".IPPCODE22")){
+      return;
+    }
+
+    // Header not found but line is not empty?
+    if(strlen($line) > 0){
+      trigger_error("Wrong or no header was found in the provided code", 
+        E_USER_WARNING);
+      exit(21);
+    }
+  }
+}
 
 
 // Remove comments and unnecessary white spaces from a line
@@ -282,50 +334,13 @@ function trimLine($line){
 }
 
 
-// Check user-provided arguments
-function checkArgs($argc, $argv){
-  if($argc > 1){
-    if($argc == 2 && $argv[1] == "--help"){
-      echo(USAGE);
-      exit(0);
-    }else{
-      trigger_error("Could not parse arguments provided", E_USER_WARNING);
-      exit(10);
-    }
-  }
-}
-
-
-// Check for the .IPPcode22 header (case insensitive)
-function checkInputHeader(){
-  while($line = fgets(STDIN)){
-
-    // Remove redundant whitespaces from the line
-    $line = trimLine($line);
-
-    // Header found? Return
-    if(!strcmp(strtoupper($line), ".IPPCODE22")){
-      return;
-    }
-
-    // Header not found but line is not empty?
-    if(strlen($line) > 0){
-      break;
-    }
-  }
-
-  // Header not found!
-  trigger_error("Wrong or no header was found in the provided code", E_USER_WARNING);
-  exit(21);
-}
-
-
 /*
  *
  * Main program flow
  *
  */
 
+ini_set('display_errors', 'stderr');
 
 // Check user-provided arguments
 checkArgs($argc, $argv);
@@ -344,11 +359,13 @@ while($line = fgets(STDIN)){
 
   // Trim redundant white characters from the received line
   $line = trimLine($line);
+
+  // Skip if the line is empty
   if(!strlen($line)){
     continue;
   }
 
-  // Create and initialize an instruction given the order and the read line
+  // Create and initialize an instruction given the order and the line 
   $instruction = new Instruction($order, $line);
 
   // Parse the line to get instruction arguments
