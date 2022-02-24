@@ -29,7 +29,7 @@ Requirements:
   Requires php 8.1
 
 Usage:
-  php parse.php [--help]
+  php8.1 parse.php [--help]
 ");
 
 
@@ -339,6 +339,7 @@ function trimLine($line){
  * Main program flow
  *
  */
+
 
 ini_set('display_errors', 'stderr');
 
