@@ -115,7 +115,7 @@ class TestCase{
     }
 
     // Create all other files if they don't exist
-    foreach(array_merge($this->paths, $this->paths) as $path){
+    foreach($this->paths as $path){
       if(!touch($path)){
         trigger_error("Cannot create temporary file:" . $path, 
           E_USER_WARNING);
