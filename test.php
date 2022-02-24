@@ -1,11 +1,13 @@
 <?php // Author: Patrik Skaloš
 
-
-ini_set('display_errors', 'stderr');
+// Warning: the standard output is to be forwarded to a HTML file and read by a
+// browser
 
 
 /*
+ *
  * Constants
+ *
  */
 
 
@@ -40,11 +42,13 @@ Options:
   --noclean: does not remove the temporary files after tests are done
 ");
 
+
 // File extensions
-define("TEST_EXTENSION", ".src");
-define("IN_EXTENSION", ".in");
-define("OUT_EXTENSION", ".out");
-define("RC_EXTENSION", ".rc");
+define("TEST_EXT", ".src");
+define("IN_EXT", ".in");
+define("OUT_EXT", ".out");
+define("RC_EXT", ".rc");
+
 
 // User options
 define("OPTIONS", [
@@ -61,20 +65,28 @@ define("OPTIONS", [
 
 
 /*
+ *
  * Classes
+ *
  */
 
 
-// TODO refactor
+/*
+ * Test case class containing everything about a test:
+ *
+ * $dir: the directory where the test case is located
+ * $name: name of the test case's source file (eg. abc.src)
+ * $paths: object containing paths to .src (source code), .in (input), 
+ *   .out (reference output), .rc (reference return code), .out_tmp (stdout), 
+ *   .err_tmp (stderr) and .diff_tmp (difference between output and reference)
+ * $returned_code: code returned by executing the test
+ * $success: boolean, true if the test was successful
+ */
 class TestCase{
   public $dir;
   public $name;
-
   public $paths;
-  public $contents;
-  public $output_paths;
   public $returned_code;
-
   public $success;
 
   // Gets all the test-case data to be ready to execute the test
@@ -85,113 +97,110 @@ class TestCase{
     // Generate other files' paths
     $this->paths = [
       "test" => $this->dir . $this->name,
-      "in" => str_replace(TEST_EXTENSION, IN_EXTENSION, $this->dir . $this->name),
-      "out" => str_replace(TEST_EXTENSION, OUT_EXTENSION, $this->dir . $this->name),
-      "rc" => str_replace(TEST_EXTENSION, RC_EXTENSION, $this->dir . $this->name)
+      "in" => str_replace(TEST_EXT, IN_EXT, $this->dir . $this->name),
+      "out" => str_replace(TEST_EXT, OUT_EXT, $this->dir . $this->name),
+      "rc" => str_replace(TEST_EXT, RC_EXT, $this->dir . $this->name),
+      "stdout" => str_replace(TEST_EXT, ".out_tmp", $this->dir . $this->name),
+      "stderr" => str_replace(TEST_EXT, ".err_tmp", $this->dir . $this->name),
+      "diff" => str_replace(TEST_EXT, ".diff_tmp", $this->dir . $this->name),
     ];
 
-    $this->output_paths = [
-      "stdout" => str_replace(TEST_EXTENSION, ".out_tmp", $this->dir . $this->name),
-      "stderr" => str_replace(TEST_EXTENSION, ".err_tmp", $this->dir . $this->name),
-      "diff" => str_replace(TEST_EXTENSION, ".xml", $this->dir . $this->name),
-    ];
-
-    // Write 0 to return code file if the file does not exist
+    // Write 0 to return code file if the rc file does not exist
     if(!file_exists($this->paths["rc"])){
       if(!file_put_contents($this->paths["rc"], "0")){
-        // TODO err
+        trigger_error("Cannot create temporary file:" . $this->paths["rc"], 
+          E_USER_WARNING);
+        exit(41);
       }
     }
+
     // Create all other files if they don't exist
-    foreach(array_merge($this->paths, $this->output_paths) as $path){
+    foreach(array_merge($this->paths, $this->paths) as $path){
       if(!touch($path)){
-        // TODO err
+        trigger_error("Cannot create temporary file:" . $path, 
+          E_USER_WARNING);
+        exit(41);
       }
     }
-
-    // Read from those files
-    foreach($this->paths as $key => $path){
-      $file = fopen($path, "r");
-      if(!$file){
-        // TODO err
-      }
-      $this->contents[$key] = file_get_contents($path);
-      if($this->contents[$key] == False){
-        // TODO err
-      }
-
-      fclose($file);
-    }
-
-    // print("Test case initialized: " . $this->dir . $this->name . "\n");
-    // TODO
   }
 
+
   // Execute the script with the inputs provided
-  function execute($action, $parser_path, $int_path){
-    // Test the parser
-    if($action == "parse"){
+  function execute($target, $parser_path, $int_path){
+
+    // Test the parser aonly
+    if($target == "parser"){
       $command = "php8.1 " 
           . "\"" . $parser_path . "\" "
           . "< \"" . $this->paths["test"] . "\" "
-          . "> \"" . $this->output_paths["stdout"] . "\" "
-          . "2> \"" . $this->output_paths["stderr"] . "\" ";
-    // Test the interpret
-    }else if ($action == "int"){
-      $command = "python3 "
+          . "> \"" . $this->paths["stdout"] . "\" "
+          . "2> \"" . $this->paths["stderr"] . "\" ";
+
+    // Test the interpret only
+    }else if ($target == "interpret"){
+      $command = "python3.8 "
           . "\"" . $int_path . "\" "
           . "--source=\"" . $this->paths["test"] . "\" "
           . "--input=\"" . $this->paths["in"] . "\" "
-          . "> \"" . $this->output_paths["stdout"] . "\" "
-          . "2> \"" . $this->output_paths["stderr"] . "\" ";
-    // Test both of them
+          . "> \"" . $this->paths["stdout"] . "\" "
+          . "2> \"" . $this->paths["stderr"] . "\" ";
+
+    // Test both of them by running the parser and forwarding stdout to int
     }else{
       $command = "php8.1 " 
           . "\"" . $parser_path . "\" "
           . "< \"" . $this->paths["test"] . "\" "
-          . "2> \"" . $this->output_paths["stderr"] . "\" "
+          . "2> \"" . $this->paths["stderr"] . "\" "
           . "| python3 "
           . "\"" . $int_path . "\" "
           . "--input=\"" . $this->paths["in"] . "\" "
-          . "> \"" . $this->output_paths["stdout"] . "\" "
-          . "2> \"" . $this->output_paths["stderr"] . "\" ";
+          . "> \"" . $this->paths["stdout"] . "\" "
+          . "2> \"" . $this->paths["stderr"] . "\" ";
     }
-    exec($command, $dummy, $ret_val);
-    $this->returned_code = $ret_val;
+
+    // Execute the command, keep the return code
+    exec($command, $dummy, $this->returned_code);
   }
 
+
   // Check the output with the reference files
-  function evaluate($action, $jexamxml_dir){
-    // If the returned code is not zero, just check if it matches the reference
+  function evaluate($target, $jexamxml_dir){
+
+    // If the returned code is not 0, just check if it matches the reference
     if($this->returned_code != 0){
       if($this->returned_code == file_get_contents($this->paths["rc"])){
         $this->success = True;
       }else{
         $this->success = False;
       }
+
+    // Else, check the differences between outputs
     }else{
-      $command = ""; // TODO needed?
+
       // Evaluate the parser output
-      if($action == "parse"){
+      if($target == "parser"){
         $command = "java -jar "
           . "\"" . $jexamxml_dir . "jexamxml.jar\" "
           . "\"" . $this->paths["out"] . "\" "
-          . "\"" . $this->output_paths["stdout"] . "\" "
-          . "\"" . $this->output_paths["diff"] . "\" "
+          . "\"" . $this->paths["stdout"] . "\" "
+          . "\"" . $this->paths["diff"] . "\" "
           . "\"/D\" "
           . "\"" . $jexamxml_dir . "options" . "\" ";
+
       // Evaluate the interpret output or both outputs
       }else{
         $command = "diff -qyt --left-column "
           . "\"" . $this->paths["out"] . "\" "
-          . "\"" . $this->output_paths["stdout"] . "\" ";
+          . "\"" . $this->paths["stdout"] . "\" ";
       }
 
-      exec($command, $dummy, $ret_val);
+      // Execute the evaluation command
+      exec($command, $dummy, $diff_ret_val);
 
-      // Check the diff, stderr and return code
-      if($ret_val == 0 
-          && $this->returned_code == file_get_contents($this->paths["rc"])){
+      // Check the diff and return code (I guess I don't need to check if
+      // stderr is empty)
+      if($this->returned_code == file_get_contents($this->paths["rc"])
+          && $diff_ret_val == 0){
         $this->success = True;
       }else{
         $this->success = False;
@@ -199,58 +208,84 @@ class TestCase{
     }
   }
 
-  // Show evaluation:
-  function printEvaluation(){
-    if(!$this->success){
-      print("\n");
-      print("<div style=\"border: 5x solid red; border-radius: 10px; margin: 25px; padding: 10px; width: calc(100\% - 50px); background-color: #2e0000;\">\n");
-      print("FAILED: " . $this->dir . $this->name . "<br>\n");
-      print("==================================================<br>\n");
-      
-      print("TEST:<br>\n" . html_string(file_get_contents($this->paths["test"])) . "<br>\n");
-      print("==================================================<br>\n");
 
+  // Print evaluation as HTML:
+  function printEvaluation(){
+
+    // If the test failed, print comprehensive information about it
+    if(!$this->success){
+
+      // Create a DIV with dark red background
+      print("<div style=\"border: 5x solid red; border-radius: 10px; "
+        . "margin: 25px; padding: 10px; width: calc(100\% - 50px); "
+        . "background-color: #2e0000;\">\n");
+
+      // Print the test path and contents
+      print("FAILED: " . $this->dir . $this->name . "\n");
+      print("<hr>");
+      print("CODE INPUT:\n");
+      print(html_string(file_get_contents($this->paths["test"])) . "\n");
+      print("<hr>");
+
+      // Didn't pass because of different return codes? Print them
       if($this->returned_code != file_get_contents($this->paths["rc"])){
-        // Didn't pass because of wrong return code
         print("RETURN CODE:<br>\n");
         print("Expected: " . file_get_contents($this->paths["rc"]) . "<br>\n");
         print("Received: " . $this->returned_code . "<br>\n");
-        print("==================================================<br>\n");
-        print("STDERR:<br>\n");
-        print(html_string(file_get_contents($this->output_paths["stderr"])));
-        print("<br>\n");
+
+      // Didn't pass because the output is wrong? Print them
       }else{
-        print("STDERR:<br>\n");
-        print(html_string(file_get_contents($this->output_paths["stderr"])));
-        print("<br>\n");
-        print("==================================================<br>\n");
-        print("EXPECTED:<br>\n");
-        print(html_string(file_get_contents($this->paths["out"])));
-        print("<br>\n");
-        print("==================================================<br>\n");
-        print("RECEIVED:<br>\n");
-        print(html_string(file_get_contents($this->output_paths["stdout"])));
-        print("<br>\n");
-        print("==================================================<br>\n");
-        print("DIFF:<br>\n");
-        print(html_string(file_get_contents($this->output_paths["diff"])));
+        print("EXPECTED OUTPUT:\n");
+        print(html_string(file_get_contents($this->paths["out"])) . "\n");
+        print("<hr>");
+        print("RECEIVED OUTPUT:\n");
+        print(html_string(file_get_contents($this->paths["stdout"])) . "\n");
       }
-      print("</div>\n\n");
+
+      // Print stderr in either case
+      print("<hr>");
+      print("STDERR:\n");
+      print(html_string(file_get_contents($this->paths["stderr"])) . "\n");
+
+    // If a test passed, only print the path and code input
+    }else{
+
+      // Create a DIV with dark green background
+      print("<div style=\"border: 5x solid red; border-radius: 10px; "
+        . "margin: 25px; padding: 10px; width: calc(100\% - 50px); "
+        . "background-color: #002e00;\">\n");
+
+      // Print the path and the code input
+      print("PASSED: " . $this->dir . $this->name . "\n");
+      print("<hr>");
+      print("CODE INPUT:\n");
+      print(html_string(file_get_contents($this->paths["test"])) . "\n");
     }
+    print("</div>\n\n");
   }
+
 
   // Remove all temporary files of this test case
   function clean(){
-    foreach($this->output_paths as $file){
+    $to_clean = [
+      $this->paths["stdout"],
+      $this->paths["stderr"],
+      $this->paths["diff"], 
+      str_replace(TEST_EXT, ".out.log", $this->dir . $this->name),
+    ];
+    foreach($to_clean as $file){
       if(file_exists($file)){
         unlink($file);
       }
     }
-    if(file_exists(str_replace(TEST_EXTENSION, ".out.log", $this->dir . $this->name))){
-      unlink(str_replace(TEST_EXTENSION, ".out.log", $this->dir . $this->name));
-    }
   }
 }
+
+/*
+ *
+ * Functions
+ *
+ */
 
 
 // Fetches all files ending with .src in $dir. Also searches subdirectories
@@ -258,12 +293,14 @@ class TestCase{
 // Returns an array of which elements are objects of class TestCase
 function getTestCasesInDir($dir, $recursive){
   $test_cases = [];
+
+  // Get all contents in the directory (files and directories)
   $content = scandir($dir);
 
   // Get all src files
   for($i = 0; $i < count($content); $i++){
     if(!is_dir($dir . $content[$i]) 
-        && str_ends_with($content[$i], TEST_EXTENSION)){
+        && str_ends_with($content[$i], TEST_EXT)){
       array_push($test_cases, new TestCase($dir, $content[$i]));
     }
   }
@@ -284,9 +321,13 @@ function getTestCasesInDir($dir, $recursive){
   return $test_cases;
 }
 
-// TODO
+
+// Create a <pre> element to format the code and convert special characters
+// (eg. &) to html friendly ones (eg. &amp)
 function html_string($str){
-  return str_replace("\n", "<br>", htmlspecialchars($str, ENT_QUOTES));
+  return "<pre style=\"margin: 0;\">" 
+    . htmlspecialchars($str, ENT_QUOTES) 
+    . "</pre>";
 }
 
 
@@ -297,16 +338,27 @@ function html_string($str){
  */
 
 
-// Get all options and if some of them are conflicted or canot parse -> err
+ini_set('display_errors', 'stderr');
+
+/*
+ * Get and parse the user options
+ */
+
+// Get all options, if some of them are conflicted or canot parse -> err
 $options = getopt("", OPTIONS);
 if($options == False
-    || (array_key_exists("parse-only", $options) && array_key_exists("int-only", $options))
-    || (array_key_exists("parse-script", $options) && array_key_exists("int-only", $options))
-    || (array_key_exists("int-script", $options) && array_key_exists("parse-only", $options))){
-  trigger_error("Failed to parse the arguments provided by the user", E_USER_ERROR);
+    || ( array_key_exists("parse-only", $options) 
+      && array_key_exists("int-only", $options))
+    || ( array_key_exists("parse-script", $options) 
+      && array_key_exists("int-only", $options))
+    || ( array_key_exists("int-script", $options) 
+      && array_key_exists("parse-only", $options))){
+  trigger_error("Failed to parse the arguments provided by the user", 
+    E_USER_WARNING);
   exit(10);
 }
 
+// Print usage if asked
 if(array_key_exists("help", $options)){
   print(USAGE);
   exit(0);
@@ -322,29 +374,21 @@ if(array_key_exists("directory", $options)){
   $tests_dir = "./";
 }
 
-// Get the recursive option
-$recursive = array_key_exists("recursive", $options);
-
+// Get parser path
 if(array_key_exists("parse-script", $options)){
   $parser = $options["parse-script"];
 }else{
   $parser = "./parse.php";
 }
 
+// Get interpret path
 if(array_key_exists("int-script", $options)){
   $interpret = $options["int-script"];
 }else{
   $interpret = "./interpret.py";
 }
 
-if(array_key_exists("parse-only", $options)){
-  $action = "parse";
-}else if(array_key_exists("int-only", $options)){
-  $action = "int";
-}else{
-  $action = "both";
-}
-
+// Get the jexamxml directory path
 if(array_key_exists("jexampath", $options)){
   $jexamxml_dir = $options["jexampath"];
   if(!str_ends_with($jexamxml_dir, '/')){
@@ -354,24 +398,33 @@ if(array_key_exists("jexampath", $options)){
   $jexamxml_dir = "/pub/courses/ipp/jexamxml/";
 }
 
-if(array_key_exists("noclean", $options)){
-  $clean = False;
+// Get the test target
+if(array_key_exists("parse-only", $options)){
+  $target = "parser";
+}else if(array_key_exists("int-only", $options)){
+  $target = "interpret";
 }else{
-  $clean = True;
+  $target = "both";
 }
 
+// Get the recursive option
+$recursive = array_key_exists("recursive", $options);
 
 // Check if dirs and files exist
 if(!file_exists($tests_dir)
-    || (!file_exists($jexamxml_dir . "jexamxml.jar") && $action == "parse")
-    || (!file_exists($jexamxml_dir . "options") && $action == "parse")
-    || (!file_exists($parser) && $action != "int")
-    || (!file_exists($interpret) && $action != "parse")){
-  trigger_error("A path provided by the user does not exist", E_USER_ERROR);
+    || ($target == "parser"    && !file_exists($jexamxml_dir . "jexamxml.jar"))
+    || ($target == "parser"    && !file_exists($jexamxml_dir . "options"))
+    || ($target != "interpret" && !file_exists($parser))
+    || ($target != "parser"    && !file_exists($interpret))){
+  trigger_error("One of the paths provided does not exist", E_USER_WARNING);
   exit(41);
 }
 
+/*
+ * Execute the tests and print the report to the standard output as HTML
+ */
 
+// Print the report beginning
 print("<!DOCTYPE html>\n");
 print("<html>\n");
 print("<head>\n");
@@ -379,56 +432,66 @@ print("<title>IPP project test results</title>\n");
 print("</head>\n");
 print("<body style=\"background-color: #111; color: #ddd;\">\n");
 
-
+// Get test cases, count them and initialize the results object
 $test_cases = getTestCasesInDir($tests_dir, $recursive);
 $total_tests = count($test_cases);
-$result = ["passed" => 0, "total" => 0];
+$results = ["passed" => 0, "total" => 0];
 
 // Execute and evaluate the tests
 foreach($test_cases as $test_case){
 
   // Execute the tests
-  $test_case->execute($action, $parser, $interpret);
+  $test_case->execute($target, $parser, $interpret);
 
-  // TODO
   // Evaluate the tests
-  $test_case->evaluate($action, $jexamxml_dir);
+  $test_case->evaluate($target, $jexamxml_dir);
 
-  // Calculate the result
+  // Update the results object
   if($test_case->success){
-    $result["passed"]++;
+    $results["passed"]++;
   }
-  $result["total"]++;
+  $results["total"]++;
 
-  // TODO remove:
-  fwrite(STDERR, "Executing test " . $result["total"] . " of " . $total_tests . "\r");
-
+  // TODO remove?
+  // Print an overwriting line showing the testing status
+  fwrite(STDERR, $results["passed"] . "/" . $results["total"] 
+    . " tests passed. Total tests: " . $total_tests . "\r");
 }
 
+// Clear the overwriting line
+fwrite(STDERR, "                                                           \r");
+
 // Print tests overview
-print("<div style=\"text-align: center; margin: 50px; margin-bottom: 100px; border: 5px solid #22ff22aa;\">\n");
-print("<p style=\"font-size: 4em;\">Overview of tests on target: " . $action . "</p>\n");
-print("<p style=\"font-size: 2em; margin-bottom: 75px;\">\n");
-if($result["passed"] != $result["total"]){
-  print("Passed " . $result["passed"] . " out of " . $result["total"] . " tests\n");
+print("<div style=\"text-align: center; margin: 50px; margin-bottom: 100px; "
+  . "border: 5px solid #22ff22aa;\">\n");
+print("<p style=\"font-size: 3em;\">Tests overview for: " . $target . "</p>\n");
+print("<p style=\"font-size: 2em; margin-bottom: 50px;\">\n");
+if($results["passed"] != $results["total"]){
+  print($results["passed"] . " of " . $results["total"] . " tests passed\n");
 }else{
-  print("All " . $result["total"] . " tests passed! Congratulations!\n");
+  print("All " . $results["total"] . " tests passed! Congratulations!\n");
 }
 print("</p>\n");
 print("</div>\n");
 
 // Print information about the failed tests
-if($result["passed"] != $result["total"]){
-  print("<div>\n");
-  print("<h1 style=\"text-align: center;\">Failed tests info:</h1>\n");
+if($results["passed"] != $results["total"]){
   foreach($test_cases as $test_case){
-    $test_case->printEvaluation();
+    if(!$test_case->success){
+      $test_case->printEvaluation();
+    }
   }
-  print("</div>\n");
 }
 
-// Remove the tmp files
-if($clean){
+// Print all tests that passed (below the failed ones)
+foreach($test_cases as $test_case){
+  if($test_case->success){
+    $test_case->printEvaluation();
+  }
+}
+
+// Remove temporary files if --noclean was not specified
+if(!array_key_exists("noclean", $options)){
   foreach($test_cases as $test_case){
     $test_case->clean();
   }

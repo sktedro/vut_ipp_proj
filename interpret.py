@@ -68,8 +68,8 @@ class Program:
         # Check for duplicit orders of instructions in the XML file
         for i in range(len(self.instructions) - 1):
             if self.instructions[i].order == self.instructions[i + 1].order:
-                err(32, "Duplicit instruction orders:", 
-                        str(self.instructions[i].order))
+                err(32, "Duplicit instruction orders: "
+                        + str(self.instructions[i].order))
 
         # Extract labels
         self.labels = {}
@@ -79,7 +79,7 @@ class Program:
 
                 # Make sure a label with that name doesn't already exist
                 if label_name in self.labels:
-                    err(52, "Label name " + label_name + " used twice")
+                    err(52, "Label name \"" + label_name + "\" used twice")
 
                 # Create the new label
                 self.labels[label_name] = instruction.order
@@ -225,7 +225,7 @@ class Instruction:
 
         # Check for invalid opcode
         if not opcode.upper() in INSTRUCTIONS:
-            err(32, "Invalid opcode:", opcode)
+            err(32, "Invalid opcode: \"" + opcode + "\"")
 
         self.order = int(order)
         self.opcode = opcode.upper()
@@ -975,7 +975,7 @@ if __name__ == "__main__":
         # Check for tags that are not allowed
         allowed = ["instruction", "arg1", "arg2", "arg3", "name", "description"]
         if elem != xml_root and elem.tag not in allowed:
-            err(32, "Invalid tag in the XML file:", elem.tag)
+            err(32, "Invalid tag in the XML file: \"" + elem.tag + "\"")
 
         # Order and opcode of an instruction needs to be specified
         if (elem.tag == "instruction" and 
