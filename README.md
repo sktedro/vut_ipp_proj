@@ -1,15 +1,15 @@
 # Brief: IPP project
 
-This repository contains a parser written in PHP, interpret written in Python
-and testing script for both of them also written in PHP. The parser takes a
+This repository contains a parser written in PHP, an interpret written in Python
+and a testing script for both of them also written in PHP. The parser takes a
 source code written in IPPcode22 programming language and outputs its
 representation in a XML format. The interpret takes the code in XML format and
 simply runs is. The testing script is a bit more complicated and will be
-explained later, but put simply, it takes inputs and reference outputs of a
-test case from a provided folder, runs the test target and compares the outputs
-with the reference outputs. Finally, evaluates the tests by printing the
-evaluation in HTML format which is to be forwarded to a .html file and read in
-a browser.
+explained later, but put simply, it takes inputs and reference outputs of all
+test cases in a provided folder, runs the test target for every one these inputs
+and compares the outputs with the reference outputs. Finally, it evaluates the
+tests by printing a report in HTML format which is to be forwarded to a .html
+file and read in a browser by the user.
 
 
 
@@ -27,29 +27,31 @@ php 8.1
 
 The source code to be parsed is read from the standard input line by line.
 Since the code must not contain any instructions preceding a header 
-(`IPPcode22`), a function checkInputHeader() first reads lines in a loop until
+(`.IPPcode22`), a function `checkInputHeader` first reads lines in a loop until
 the header is found. Only if the header is present, a simple XML object is 
-created as a new DOMDocument object with an appropriate header and root element.
+created as a new `DOMDocument` object with the required header and a root element.
 After that, the source code is read line by line in a loop, while every line is
-trimmed of redundant characters (spaces, newline character, comments, ...). 
+trimmed of redundant characters (spaces, newline character, comments, ...) and 
+parsed in a following way: 
 
 #### Checking and parsing source code lines
 
 If the line is not empty, it is assumed it contains an instruction and a new 
-Instruction object is created. It consists of `order`, `opcode` (name) and 
+`Instruction` object is created. This object consists of `order`, `opcode`
+(instruction name) and 
 `args` of the instruction, which the line is parsed into. The parsing process
 is pretty simple thanks to an array containing required argument types for each
 instruction. First, we need to check if the `opcode` is in that array and then,
 based on types of arguments required, we can try to match the arguments to a
-regular expression. If that fails, the argument is invalid. Otherwise, the
-argument is appended to the `args` array of the Instruction object. We also
+regular expression. If that fails, the argument is evaluated as invalid. Otherwise, the
+argument is appended to the `args` array of the `Instruction` object. We also
 need to convert strings and names to only contain XML friendly characters, eg.
 `&` is converted to `&amp`.
 
 #### Converting the instruction to XML format
 
-After the instruction is parsed, we call a function addInstruction() to convert
-it to the XML format. Example for a LABEL instruction:
+After the instruction is parsed, we call a method `addInstruction` to convert
+it to the XML format. Example for the `LABEL` instruction:
 ```
 <instruction order="1" opcode="LABEL">
   <arg1 type="label">labelName</arg1>
@@ -61,9 +63,9 @@ XML root element which then acts as a list of instructions.
 
 #### Finishing
 
-Only when all lines (instructions) have been read, generateOutput() function of
-our XML class is called to convert the XML created structure to a string which
-is then printed to the standard input - this makes the parsing finish
+Only when all lines (instructions) have been read, `generateOutput` method of
+our `XML` class is called to convert the created XML structure to a string which
+is then printed to the standard output - this makes the parsing finish
 successfully.
 
 #### Note
@@ -96,7 +98,7 @@ php8.1 parse.php [--help] < relative/or/absolute/path/to/file
 Python 3.8
 
 
-### Documentation TODO
+### Documentation
 
 #### Initialization
 
@@ -106,27 +108,27 @@ get the root element of the file.
 #### Reading the instructions
 
 The script iterates through all elements with the tag equal to `instruction`,
-reads the attributes and creates Instruction objects. For each instruction
+reads the attributes and creates `Instruction` objects. For each instruction
 elements, it also iterates through all the sub-elements (arguments), parses
-them by creating Argument objects and appends them to an array stored in the 
-Instruction object. Every Instruction object also stores its order and opcode
+them by creating `Argument` objects and appends them to an array stored in the 
+`Instruction` object. Every `Instruction` object also stores its order and opcode
 and provides methods to add an argument and run the instruction.
 
 #### Reading the arguments
 
-Every Argument object stores argument's order, type (which can be an argument 
+Every `Argument` object stores argument's order, type (which can be an argument 
 type or a data type if the argument is a literal) and a value which is just raw 
 text extracted from the xml element. Order and value of each argument is, of
-course, checked for validity (at times using regular expression). Argument
+course, checked for validity (at times using regular expression). `Argument`
 objects provide methods to get their value or data type (of a variable if the 
 argument is a variable).
 
 #### Program
 
 Everything about the interpretation is stored in a global variable which is an
-instance of class Program. This class stores the input file, instructions
+instance of class `Program`. This class stores the input file, instructions
 sorted by their orders, a symbol table, list of labels, a data stack and a
-return (function call) stack. Program class provides methods to jump after an
+return (function call) stack. The `Program` class provides methods to jump after an
 instruction, jump to a label and run all instructions in a loop. After all
 instructions have been parsed, an object of this class is created initializing
 the interpretation and the only thing left to do is to run all instructions one
@@ -135,6 +137,7 @@ by one, which is done by the mentioned method of this class.
 #### Symbol table
 
 A symbol table needed to be implemented for the interpretation and is a class
+`SymTab`
 consisting of a global frame, temporary frame and a list of local frames. Every
 frame is just a dictionary where variables are stored by name as objects, while
 having these four attributes: `declared` (boolean), `defined` (boolean),
@@ -165,7 +168,7 @@ This tells the script to call function `e_jump` of class `Exec` to execute the
 instruction, that it takes one argument of type label of any data type while
 the label also needs to be already defined when executing.
 
-To run the instruction, its method `run()` is called. This method is a huge
+To run the instruction, its method `run` is called. This method is a huge
 function checking if all requirements are met (if the arguments are
 declared/defined if they need to be, if they are the right types and data
 types) and if everything checks out, a function from the class `Exec` is called
@@ -184,7 +187,7 @@ these functions).
 the `Program.return_stack` and calls `Exec.e_jump` function with the same 
 arguments as it received.
 
-`Exec.e_pops`: calls python's `pop()` function on `Program.data_stack`. If it
+`Exec.e_pops`: calls python's `pop` function on `Program.data_stack`. If it
 fails, exit with a value `56`, otherwise, call `Program.symtab.define` on the
 first argument while providing the type and value of the popped item.
 
@@ -236,11 +239,11 @@ is generated.
 The script searches the provided directory for files with `.src` extension
 which will define a single test case. If `--recursive` option is selected, it
 recursively search all subfolders as well. The output of this action is an
-array of TestCase objects. 
+array of `TestCase` objects. 
 
 #### Initialization of the test cases
 
-Each of TestCase objects contains the directory in which the source files are 
+Each one of `TestCase` objects contains the directory in which the source files are 
 located, name of the test case, paths to all files of the test case (source 
 file, input, output, return code, temporary stdout file, temporary stderr file 
 and temporary diff file), code retuned by the target after test execution and a
