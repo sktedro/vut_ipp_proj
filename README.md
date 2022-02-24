@@ -70,25 +70,148 @@ successfully.
 
 Of course, every step of the way the code is inspected for lexical and
 syntactic errors and in case of finding any, the parsing stops and returns an
-appropriate return value.
-
+appropriate return value while reporting the error to the standard error output.
 
 ### Usage
 
 #### Reading the source code from the standard input
 
+```
 php8.1 parse.php [--help]
+```
 
 #### Reading the source code from a file
 
+```
 php8.1 parse.php [--help] < relative/or/absolute/path/to/file
+```
 
 
 
-# Interpret TODO
+# Interpret
+
+
+### Requirements
+
+Python 3.8
+
+
+### Documentation TODO
+
+#### Initialization
+
+First, arguments are parsed and the source code is read to verify integrity and
+get the root element of the file.
+
+#### Reading the instructions
+
+The script iterates through all elements with the tag equal to `instruction`,
+reads the attributes and creates Instruction objects. For each instruction
+elements, it also iterates through all the sub-elements (arguments), parses
+them by creating Argument objects and appends them to an array stored in the 
+Instruction object. Every Instruction object also stores its order and opcode
+and provides methods to add an argument and run the instruction.
+
+#### Reading the arguments
+
+Every Argument object stores argument's order, type (which can be an argument 
+type or a data type if the argument is a literal) and a value which is just raw 
+text extracted from the xml element. Order and value of each argument is, of
+course, checked for validity (at times using regular expression). Argument
+objects provide methods to get their value or data type (of a variable if the 
+argument is a variable).
+
+#### Program
+
+Everything about the interpretation is stored in a global variable which is an
+instance of class Program. This class stores the input file, instructions
+sorted by their orders, a symbol table, list of labels, a data stack and a
+return (function call) stack. Program class provides methods to jump after an
+instruction, jump to a label and run all instructions in a loop. After all
+instructions have been parsed, an object of this class is created initializing
+the interpretation and the only thing left to do is to run all instructions one
+by one, which is done by the mentioned method of this class.
+
+#### Symbol table
+
+A symbol table needed to be implemented for the interpretation and is a class
+consisting of a global frame, temporary frame and a list of local frames. Every
+frame is just a dictionary where variables are stored by name as objects, while
+having these four attributes: `declared` (boolean), `defined` (boolean),
+`type` (data type, string), `val` (string). The symtable provides methods to
+declare and define a variable, to check if a variable is declared/defined at a
+point in time and to get the variable as an object with four mentioned
+attributes.
+
+#### Instruction execution
+
+A dictionary of dictionaries was implemented to provide a simple way to get
+information about instructions. In this dictionary, there is a dictionary for
+every instruction by an instruction opcode (name), which contains a pointer to
+a function which executes the instruction, required argument types (`var`,
+`symb`, ...), required data types of arguments (`int`, `bool`, `string`, `nil`,
+`any` for no requirement and `eq` which simply indicates that all arguments with
+requirement `eq` need to be equal) and a requirement of the argument state in
+the symbol table (`none`, `declared`, `defined`) for each argument. Example for
+instruction with opcode `JUMP`:
+```
+"JUMP":        {                  
+    "function":     Exec.e_jump,  
+    "types":        ["label"   ], 
+    "data_types":   ["any"     ], 
+    "requirements": ["defined" ]},
+```
+This tells the script to call function `e_jump` of class `Exec` to execute the
+instruction, that it takes one argument of type label of any data type while
+the label also needs to be already defined when executing.
+
+To run the instruction, its method `run()` is called. This method is a huge
+function checking if all requirements are met (if the arguments are
+declared/defined if they need to be, if they are the right types and data
+types) and if everything checks out, a function from the class `Exec` is called
+to interpret the instruction. The `Exec` class doesn't need to be a separate
+class since it only contains methods, but I thought the code might be clearer
+if the methods needed to be called as the class members.
+
+##### A few examples of instruction execution functions
+
+Most of these functions are very simple thanks to the fact that most of the
+things that need to be checked before executing were checked already (eg. we
+know that the data types are right so we don't need to check that in every of
+these functions).
+
+`Exec.e_call`: appends the instruction that is being executed in the moment to
+the `Program.return_stack` and calls `Exec.e_jump` function with the same 
+arguments as it received.
+
+`Exec.e_pops`: calls python's `pop()` function on `Program.data_stack`. If it
+fails, exit with a value `56`, otherwise, call `Program.symtab.define` on the
+first argument while providing the type and value of the popped item.
+
+`Exec.e_write`: if the data type of the first argument is not `nil`, print the
+value to the standard output without the new line character at the end.
+Otherwise, do nothing.
+
+#### Note
+
+Of course, every step of the way, various errors are checked for. I only
+mentioned a few of those in this documentation. If an error occurs, the script
+returns with an appropriate value after reporting the error to the standard
+error output (in most cases, indicating where and why was the error invoked).
 
 
 ### Usage
+
+```
+interpret.py [-h] [--source SOURCE] [--input INPUT]
+
+Options:
+  -h, --help       show this help message and exit
+  --source SOURCE  Source code of a IPPcode22 program in XML format. If not 
+      provided, code will be read from standard input
+  --input INPUT    Input for the source code implementation. If not provided, 
+      input will be forwarded from standard input
+```
 
 
 
