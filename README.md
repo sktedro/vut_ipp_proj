@@ -29,24 +29,23 @@ The source code to be parsed is read from the standard input line by line.
 Since the code must not contain any instructions preceding a header 
 (`.IPPcode22`), a function `checkInputHeader` first reads lines in a loop until
 the header is found. Only if the header is present, a simple XML object is 
-created as a new `DOMDocument` object with the required header and a root element.
-After that, the source code is read line by line in a loop, while every line is
-trimmed of redundant characters (spaces, newline character, comments, ...) and 
-parsed in a following way: 
+created as a new `DOMDocument` object with the required header and a root 
+element. After that, the source code is read line by line in a loop, while every
+line is trimmed of redundant characters (spaces, newline character, comments, 
+...) and parsed in a following way: 
 
 #### Checking and parsing source code lines
 
 If the line is not empty, it is assumed it contains an instruction and a new 
 `Instruction` object is created. This object consists of `order`, `opcode`
-(instruction name) and 
-`args` of the instruction, which the line is parsed into. The parsing process
-is pretty simple thanks to an array containing required argument types for each
-instruction. First, we need to check if the `opcode` is in that array and then,
-based on types of arguments required, we can try to match the arguments to a
-regular expression. If that fails, the argument is evaluated as invalid. Otherwise, the
-argument is appended to the `args` array of the `Instruction` object. We also
-need to convert strings and names to only contain XML friendly characters, eg.
-`&` is converted to `&amp`.
+(instruction name) and `args` of the instruction, which the line is parsed into.
+The parsing process is pretty simple thanks to an array containing required
+argument types for each instruction. First, we need to check if the `opcode` is
+in that array and then, based on types of arguments required, we can try to
+match the arguments to a regular expression. If that fails, the argument is
+evaluated as invalid. Otherwise, the argument is appended to the `args` array of
+the `Instruction` object. We also need to convert strings and names to only
+contain XML friendly characters, eg. `&` is converted to `&amp`.
 
 #### Converting the instruction to XML format
 
@@ -109,16 +108,16 @@ get the root element of the file.
 
 The script iterates through all elements with the tag equal to `instruction`,
 reads the attributes and creates `Instruction` objects. For each instruction
-elements, it also iterates through all the sub-elements (arguments), parses
+element it also iterates through all the sub-elements (arguments), parses
 them by creating `Argument` objects and appends them to an array stored in the 
-`Instruction` object. Every `Instruction` object also stores its order and opcode
-and provides methods to add an argument and run the instruction.
+`Instruction` object. Every `Instruction` object also stores its order and
+opcode and provides methods to add an argument and run the instruction.
 
 #### Reading the arguments
 
 Every `Argument` object stores argument's order, type (which can be an argument 
-type or a data type if the argument is a literal) and a value which is just raw 
-text extracted from the xml element. Order and value of each argument is, of
+type or a data type if the argument is a literal) and a value which is just a
+raw text extracted from the XML element. Order and value of each argument is, of
 course, checked for validity (at times using regular expression). `Argument`
 objects provide methods to get their value or data type (of a variable if the 
 argument is a variable).
@@ -127,12 +126,12 @@ argument is a variable).
 
 Everything about the interpretation is stored in a global variable which is an
 instance of class `Program`. This class stores the input file, instructions
-sorted by their orders, a symbol table, list of labels, a data stack and a
-return (function call) stack. The `Program` class provides methods to jump after an
-instruction, jump to a label and run all instructions in a loop. After all
-instructions have been parsed, an object of this class is created initializing
-the interpretation and the only thing left to do is to run all instructions one
-by one, which is done by the mentioned method of this class.
+sorted by their orders, a symbol table, a list of labels, a data stack and a
+return (function call) stack. The `Program` class provides methods to jump after
+an instruction, jump to a label and run all instructions in a loop. After the
+`Program` object has been constructed, the only thing left to do is to run all
+instructions one by one, which is done by the mentioned method of this class
+called from the main function.
 
 #### Symbol table
 
@@ -142,21 +141,20 @@ consisting of a global frame, temporary frame and a list of local frames. Every
 frame is just a dictionary where variables are stored by name as objects, while
 having these four attributes: `declared` (boolean), `defined` (boolean),
 `type` (data type, string), `val` (string). The symtable provides methods to
-declare and define a variable, to check if a variable is declared/defined at a
-point in time and to get the variable as an object with four mentioned
-attributes.
+declare and define a variable, to check if a variable is declared/defined at the
+moment and to get the variable as an object containing the mentioned attributes.
 
 #### Instruction execution
 
 A dictionary of dictionaries was implemented to provide a simple way to get
 information about instructions. In this dictionary, there is a dictionary for
-every instruction by an instruction opcode (name), which contains a pointer to
-a function which executes the instruction, required argument types (`var`,
-`symb`, ...), required data types of arguments (`int`, `bool`, `string`, `nil`,
-`any` for no requirement and `eq` which simply indicates that all arguments with
-requirement `eq` need to be equal) and a requirement of the argument state in
-the symbol table (`none`, `declared`, `defined`) for each argument. Example for
-instruction with opcode `JUMP`:
+every instruction by an instruction opcode (instruction name), which contains a
+pointer to a function which executes the instruction, required argument types
+(`var`, `symb`, ...), required data types of arguments (`int`, `bool`, `string`,
+`nil`, `any` for no requirement and `eq` which simply indicates that all
+arguments with requirement `eq` need to be equal) and a requirement of the
+argument state in the symbol table (`none`, `declared`, `defined`) for each
+argument. Example for instruction with opcode `JUMP`:
 ```
 "JUMP":        {                  
     "function":     Exec.e_jump,  
@@ -165,16 +163,16 @@ instruction with opcode `JUMP`:
     "requirements": ["defined" ]},
 ```
 This tells the script to call function `e_jump` of class `Exec` to execute the
-instruction, that it takes one argument of type label of any data type while
+instruction, that it takes one argument of type `label` and any data type while
 the label also needs to be already defined when executing.
 
-To run the instruction, its method `run` is called. This method is a huge
+To run the instruction, it's method `run` is called. This method is a huge
 function checking if all requirements are met (if the arguments are
 declared/defined if they need to be, if they are the right types and data
 types) and if everything checks out, a function from the class `Exec` is called
 to interpret the instruction. The `Exec` class doesn't need to be a separate
 class since it only contains methods, but I thought the code might be clearer
-if the methods needed to be called as the class members.
+if the methods are called as the class members.
 
 ##### A few examples of instruction execution functions
 
@@ -192,15 +190,16 @@ fails, exit with a value `56`, otherwise, call `Program.symtab.define` on the
 first argument while providing the type and value of the popped item.
 
 `Exec.e_write`: if the data type of the first argument is not `nil`, print the
-value to the standard output without the new line character at the end.
-Otherwise, do nothing.
+argument's value to the standard output without the new line character at the
+end. Otherwise, do nothing.
 
 #### Note
 
 Of course, every step of the way, various errors are checked for. I only
 mentioned a few of those in this documentation. If an error occurs, the script
 returns with an appropriate value after reporting the error to the standard
-error output (in most cases, indicating where and why was the error invoked).
+error output (in most cases also indicating where and why was the error 
+invoked).
 
 
 ### Usage
@@ -243,13 +242,14 @@ array of `TestCase` objects.
 
 #### Initialization of the test cases
 
-Each one of `TestCase` objects contains the directory in which the source files are 
-located, name of the test case, paths to all files of the test case (source 
+Each one of `TestCase` objects contains the directory in which the source files
+are located, name of the test case, paths to all files of the test case (source 
 file, input, output, return code, temporary stdout file, temporary stderr file 
 and temporary diff file), code retuned by the target after test execution and a
-boolean variable indicating if the test was successful. The first step of a
-test case initialization is generating paths where to find all necessary files 
-and if some of them don't exist, they are generated.
+boolean variable indicating if the test was successful. When constructing a
+`TestCase` object, paths where to find all necessary files are generated and if
+some of them don't exist, they are generated using a command `touch` (except for
+the `.rc` file since a character (`0`) needs to be written to it).
 
 #### Executing the tests
 
@@ -265,19 +265,19 @@ the code returned by the execution is stored in a variable.
 A test is considered successful if the returned value is not `0` but matches
 the reference return value, or if the returned value is `0` and the output
 matches the reference output. If the parser is the test target, difference
-between outputs is checked using JExamXML, otherwise, `diff` command is used.
+between outputs is checked using `JExamXML`, otherwise, `diff` command is used.
 
 #### Generating the report
 
 First, an overview is generated stating the test target, a number of successful
 tests and a number of total tests. After that, evaluations of failed tests are
 printed into dark red blocks containing information about the failed test: test
-path, code input and standard error output are printed. If the test didn't pass
+path, code input and standard error output. If the test didn't pass
 because of a wrong value returned, expected and received return values are
-printed. Otherwise, if the test didn't pass because the outputs didn't match,
-expected and received outputs are printed. After evaluations of failed tests,
-test path and code input is also printed for every successful test in dark
-green blocks.
+printed as well. Otherwise, if the test didn't pass because the outputs didn't
+match, expected and received outputs are printed instead. After evaluations of
+failed tests, test path and code input is also printed for every successful test
+in dark green blocks.
 
 #### Finishing
 
