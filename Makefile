@@ -1,3 +1,4 @@
+# TESTSDIR=../supplementary-tests
 TESTSDIR=../ipp_2022_fan-made-tests
 JEXAMDIR=../jexamxml
 
@@ -13,7 +14,7 @@ test_parser:
 # Only test the interpret
 test_interpret:
 	@ echo "Testing the interpret"
-	@ php8.1 test.php --directory="$(TESTSDIR)/interpret-only/" --recursive\
+	@ php8.1 test.php --directory="$(TESTSDIR)/int-only/" --recursive\
 		--int-only --jexampath="$(JEXAMDIR)" > report.html;            \
 		cat report.html | grep -e "tests passed\|Congratulations"
 
@@ -28,13 +29,8 @@ test_both:
 test: test_parser test_interpret test_both
 	rm report.html
 
-doc:
-	$(MAKE) -C doc
-
-pack: doc
-	mv doc/doc.pdf ./
-	zip xskalo01.zip parse.php test.php interpret.py doc.pdf
+pack: clean
+	zip xskalo01.zip parse.php test.php interpret.py README.md
 
 clean:
-	rm -f *.html *.zip *.pdf
-	$(MAKE) -C doc clean
+	rm -f *.html *.zip
